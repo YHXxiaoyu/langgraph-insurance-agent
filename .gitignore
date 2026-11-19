@@ -1,0 +1,27 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.python-version
+
+# ---------- 环境变量（含密钥，绝不提交）----------
+.env
+.env.local
+.env.*.local
+
+# ---------- 数据与构建产物 ----------
+# 保险条款 PDF（约 15MB，请自行准备）
+agent-service/data/raw/
+# notebook 的解析资源
+agent-service/notebooks/day07/resources/
+# 前端依赖与打包产物
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# ---------- IDE / 系统 ----------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
