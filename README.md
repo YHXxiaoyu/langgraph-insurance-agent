@@ -144,6 +144,5 @@ uv run python scripts/ingest_rag.py
 
 ## 说明
 
-- 本项目为 **LangGraph 多 Agent 实战课程** 的学习成果，代码结构遵循课程设计，仅作学习与技术展示用途，不得用于商业场景。
 - 仓库内所有密钥、令牌均已移除或替换为占位符，运行前请自行配置 `.env`。
 - 保险条款 PDF、MinerU 解析中间产物、前端构建产物未纳入版本管理，详见 `.gitignore`。
