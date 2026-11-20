@@ -1,0 +1,45 @@
+server:
+  port: 8080
+
+spring:
+  config:
+    # 启动时把项目根目录的 .env 当成 properties 文件读进来
+    import: optional:file:.env[.properties]
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT:3306}/insurance_biz?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER}
+    password: ${MYSQL_PASSWORD}
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    # 让 @EnumValue 生效：UserStatus 这类枚举与数据库里的字符串互转
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+
+jwt:
+  # 必须由环境变量或 .env 提供，缺失则启动失败
+  secret: ${JWT_SECRET}
+  # token 有效期，单位分钟
+  expire-minutes: ${JWT_EXPIRE_MINUTES:1440}
+internal:
+  # Python 侧回调内部接口时校验的令牌，缺失则启动失败
+  token: ${INTERNAL_TOKEN}
+
+# 接口文档：浏览器打开 http://localhost:8080/doc.html
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn

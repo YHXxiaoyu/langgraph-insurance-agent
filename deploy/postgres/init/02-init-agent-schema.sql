@@ -31,6 +31,7 @@ COMMENT ON COLUMN chat_threads.updated_at IS '最后一次对话或修改标题�
 COMMENT ON TABLE parent_chunks IS '用于完整上下文和引用展示的父知识块';
 COMMENT ON COLUMN parent_chunks.id IS '父块主键';
 COMMENT ON COLUMN parent_chunks.product_id IS '关联的保险产品主键';
+COMMENT ON COLUMN parent_chunks.clause_name IS '条款文件名，包含 .pdf 后缀';
 COMMENT ON COLUMN parent_chunks.section_path IS 'Markdown 标题层级路径';
 COMMENT ON COLUMN parent_chunks.content IS '父块完整正文';
 COMMENT ON COLUMN parent_chunks.created_at IS '创建时间';
