@@ -64,6 +64,12 @@ public class ChatThreadServiceImpl extends ServiceImpl<ChatThreadMapper, ChatThr
         requireOwned(id);
         removeById(id);
     }
+    @Override
+    public void assertOwned(String id) {
+        // 复用已有的归属校验，保持「不存在」和「不是你的」对外表现一致
+        requireOwned(id);
+    }
+
 
     /**
      * 取会话并校验归属。

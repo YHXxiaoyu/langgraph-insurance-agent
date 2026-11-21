@@ -5,6 +5,10 @@ spring:
   config:
     # 启动时把项目根目录的 .env 当成 properties 文件读进来
     import: optional:file:.env[.properties]
+      # SSE 是长连接，超过默认的异步超时会被容器掐断
+  mvc:
+    async:
+      request-timeout: 300000      # 单位毫秒，5 分钟
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT:3306}/insurance_biz?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -43,3 +47,12 @@ knife4j:
   enable: true
   setting:
     language: zh_cn
+
+agent:
+  # Python 服务地址
+  base-url: ${AGENT_BASE_URL:http://127.0.0.1:8001}
+  # 等响应头的上限。SSE 会立刻返回 200 头，真正长的是后面的流
+  response-timeout: ${AGENT_RESPONSE_TIMEOUT:120s}
+  # 连不上要尽快失败，别让前端干等
+  connect-timeout: ${AGENT_CONNECT_TIMEOUT:5s}
+

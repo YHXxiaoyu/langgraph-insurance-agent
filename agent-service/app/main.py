@@ -75,9 +75,11 @@ def handle_exception(request: Request, exc: ApplicationError):
 from app.modules.product.router import router as product_router
 from app.modules.chat_thread.router import router as chat_thread_router
 from app.modules.chat.router import router as chat_router
+from app.modules.chat.internal_router import router as internal_agent_router
 app.include_router(chat_router)
 app.include_router(chat_thread_router)
 app.include_router(product_router)
+app.include_router(internal_agent_router)
 
 if __name__ == "__main__":
     import sys

@@ -100,6 +100,14 @@
             <version>0.12.6</version>
             <scope>runtime</scope>
         </dependency>
+        <!-- WebClient：Java 调 Python 的 Agent 接口用。
+     顺带引入 reactor-core，Controller 才能返回 Flux<ServerSentEvent>。
+     注意：带了 webflux 不会把应用变响应式 —— 类路径上同时有 spring-web(mvc) 时，
+     Spring Boot 仍然选择 Servlet 容器（WebApplicationType.SERVLET）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
 
     </dependencies>
 

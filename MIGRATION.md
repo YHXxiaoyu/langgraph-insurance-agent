@@ -276,13 +276,36 @@ com.insurance.biz
 
 ### 任务
 
-- [ ] `AgentClient` 用 `WebClient` 调 Python 的 `/internal/v1/agent/chat`
-- [ ] `ChatController` 返回 `Flux<ServerSentEvent>`
-- [ ] 读超时设置 **≥ 60 秒**（LLM 首 token 慢，默认 30 秒不够）
+- [x] `AgentClient` 用 `WebClient` 调 Python 的 `/internal/v1/agent/chat`
+- [x] `ChatController` 返回 `Flux<ServerSentEvent>`
+- [x] 读超时设置 **≥ 60 秒**（LLM 首 token 慢，默认 30 秒不够）
+- [x] Python 侧新增 `POST /internal/v1/agent/chat`，用 `X-Internal-Token` 校验
+- [x] 归属校验放在建流之前（`assertOwned`），非法会话直接 404
+
+### 进度（2026-11-21）
+
+- 代码全部完成，`mvn compile` 与 Python 导入检查通过，路由已注册，两边 `INTERNAL_TOKEN` 一致
+- **运行时验收待做**（8 项验收表见下）
+- 超时说明：Spring 6.2 的 `ReactiveTypeHandler` 给 `Flux<ServerSentEvent>` 创建 `SseEmitter`
+  时固定用 `-1`（永不超时），`spring.mvc.async.request-timeout` 对这条路径不生效；
+  真正起作用的是 `AgentClient` 的 `responseTimeout(120s)`（只管到收到响应头为止）
 
 ### 验收标准
 
 - 前端把 baseURL 指向 Java 端口，对话能正常流式输出
+
+### 验收表
+
+| # | 场景 | 期望 |
+|---|---|---|
+| 1 | 不带 token 调 `POST /api/v1/chat` | 401 |
+| 2 | 带 token + 别人的 threadId | 404 |
+| 3 | 带 token + 自己的 threadId | 200 `text/event-stream`，收到 `message` 若干 + `done` |
+| 4 | message 为空 | 400 |
+| 5 | 停掉 Python 再调 | 200 且收到一条 `event: error` |
+| 6 | 直接调 Python 内部接口，不带令牌 | 401 |
+| 7 | 同上，错误令牌 | 401 |
+| 8 | 同上，正确令牌 | 200，能收到 SSE |
 
 ---
 

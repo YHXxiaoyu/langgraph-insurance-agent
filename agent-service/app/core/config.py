@@ -78,12 +78,20 @@ class RAGSettings(EnvSettings):
     def milvus_url(self) -> str:
         return f"http://{self.milvus_host}:{self.milvus_port}"
 
+class SecuritySettings(EnvSettings):
+    """服务间调用鉴权"""
+    internal_token: str = Field(
+        alias="INTERNAL_TOKEN",
+        description="Java 调本服务内部接口时校验的共享令牌，必须与 Java 侧一致",
+    )
+
 class Settings(BaseSettings):
     app: AppSettings = Field(default_factory=AppSettings)
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     rag: RAGSettings = Field(default_factory=RAGSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
 
 # 项目启动直接初始化
 settings = Settings()

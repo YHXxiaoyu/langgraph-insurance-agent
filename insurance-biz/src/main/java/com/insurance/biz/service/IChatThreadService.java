@@ -24,4 +24,7 @@ public interface IChatThreadService extends IService<ChatThread> {
     void rename(String id, RenameChatThreadDTO dto);
 
     void delete(String id);
+    /** 校验会话归属。不存在或不属于当前用户统一抛 404，不区分两种情况 */
+    void assertOwned(String id);
+
 }

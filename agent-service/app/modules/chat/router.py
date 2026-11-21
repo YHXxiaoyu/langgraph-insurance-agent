@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, Request, Header
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from app.infra.database import get_session
+from app.modules.chat_thread.repository import ChatThreadRepository
 from .schema import ChatRequest
 from .service import ChatService
 
@@ -17,7 +18,7 @@ def get_chat_service(
 ):
     # 1.创建ChatService
     agent = request.app.state.agent
-    return ChatService(session, agent)
+    return ChatService(agent, ChatThreadRepository(session))
 
 # sse两步走：
 # 1.响应类型response_class=EventSourceResponse，标记响应格式是event_stream格式

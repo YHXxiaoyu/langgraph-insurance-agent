@@ -74,8 +74,8 @@
 └──────────────┘            └──────────────┘  └──────────────┘
 ```
 
-> 当前阶段：Java 服务已能独立提供认证、产品、会话接口，但 SSE 透传与前端切换尚未完成，
-> 前端仍直连 Python 服务。进度详见 MIGRATION.md。
+> 当前阶段：Java 侧的 SSE 透传已实现（`POST /api/v1/chat`），Python 也有对应的内部接口，
+> 但前端仍直连 Python 服务，切换要到阶段 6。进度详见 MIGRATION.md。
 
 ## 目录结构
 
@@ -200,6 +200,7 @@ uv run python scripts/ingest_rag.py
 | GET | `/api/v1/chat-threads` | 会话列表 |
 | PATCH | `/api/v1/chat-threads/{id}` | 重命名会话 |
 | DELETE | `/api/v1/chat-threads/{id}` | 删除会话 |
+| POST | `/api/v1/chat` | 对话（SSE 流式返回，Java 校验会话归属后透传给 Python） |
 
 除注册和登录外，均需请求头 `Authorization: Bearer <token>`。
 
@@ -216,11 +217,13 @@ uv run python scripts/ingest_rag.py
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/health` | 健康检查 |
-| POST | `/api/v1/chat` | 对话（SSE 流式返回） |
+| GET | `/healthy` | 健康检查 |
+| POST | `/api/v1/chat` | 对话（SSE 流式返回，过渡期保留给前端） |
+| POST | `/internal/v1/agent/chat` | 对话（SSE，供 Java 调用，需 `X-Internal-Token`） |
 | GET | `/api/v1/chat-threads/{id}/messages` | 查询历史消息 |
 
-> 改造完成后，Python 侧的会话管理接口会移交给 Java，`/chat` 将变为 `/internal/v1/agent/chat`。
+> 阶段 5 会把会话管理接口移交给 Java，公开的 `/api/v1/chat` 随之移除，
+> 只保留 `/internal/v1/agent/chat`。
 
 ## 开发进度
 
@@ -230,7 +233,7 @@ uv run python scripts/ingest_rag.py
 | 2 | JWT 鉴权 | ✅ |
 | 2.5 | 包结构对齐 `domain/{dto,po,vo}` 分层 | ✅ |
 | 3 | 业务接口（会话 CRUD、内部接口、接口文档） | ✅ |
-| 4 | AgentClient + SSE 透传 | ⬜ |
+| 4 | AgentClient + SSE 透传 | 🟡 代码完成，待运行时验收 |
 | 5 | Python 瘦身（删除业务模块，改调内部接口） | ⬜ |
 | 6 | 端到端联调 | ⬜ |
 
