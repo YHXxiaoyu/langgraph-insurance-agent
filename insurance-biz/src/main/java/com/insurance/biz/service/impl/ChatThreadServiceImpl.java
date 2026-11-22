@@ -1,6 +1,7 @@
 package com.insurance.biz.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.insurance.biz.client.AgentClient;
 import com.insurance.biz.common.exception.NotFoundException;
 import com.insurance.biz.domain.dto.CreateChatThreadDTO;
 import com.insurance.biz.domain.dto.RenameChatThreadDTO;
@@ -9,6 +10,7 @@ import com.insurance.biz.domain.vo.ChatThreadVO;
 import com.insurance.biz.mapper.ChatThreadMapper;
 import com.insurance.biz.service.IChatThreadService;
 import com.insurance.biz.utils.UserContext;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -18,10 +20,13 @@ import java.util.UUID;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class ChatThreadServiceImpl extends ServiceImpl<ChatThreadMapper, ChatThread>
         implements IChatThreadService {
 
     private static final String DEFAULT_TITLE = "新会话";
+
+    private final AgentClient agentClient;
 
     @Override
     public ChatThreadVO create(CreateChatThreadDTO dto) {
@@ -63,13 +68,18 @@ public class ChatThreadServiceImpl extends ServiceImpl<ChatThreadMapper, ChatThr
     public void delete(String id) {
         requireOwned(id);
         removeById(id);
+
+        // 先删 MySQL 这条主数据，再异步清 Python 侧的 checkpoint。
+        // 顺序不能反：万一 Python 挂了，用户至少能把自己的会话删掉，
+        // 留下的是不可见的脏数据，而不是一个删不掉的会话。
+        agentClient.deleteThread(id);
     }
+
     @Override
     public void assertOwned(String id) {
         // 复用已有的归属校验，保持「不存在」和「不是你的」对外表现一致
         requireOwned(id);
     }
-
 
     /**
      * 取会话并校验归属。

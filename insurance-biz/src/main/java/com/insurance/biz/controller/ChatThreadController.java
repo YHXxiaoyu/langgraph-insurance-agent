@@ -1,9 +1,11 @@
 package com.insurance.biz.controller;
 
+import com.insurance.biz.client.AgentClient;
 import com.insurance.biz.common.domain.R;
 import com.insurance.biz.config.OpenApiConfig;
 import com.insurance.biz.domain.dto.CreateChatThreadDTO;
 import com.insurance.biz.domain.dto.RenameChatThreadDTO;
+import com.insurance.biz.domain.vo.ChatHistoryVO;
 import com.insurance.biz.domain.vo.ChatThreadVO;
 import com.insurance.biz.service.IChatThreadService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,6 +35,7 @@ import java.util.List;
 public class ChatThreadController {
 
     private final IChatThreadService chatThreadService;
+    private final AgentClient agentClient;
 
     @Operation(summary = "新建会话", description = "请求体可以省略，标题用默认值「新会话」")
     @PostMapping
@@ -46,6 +49,17 @@ public class ChatThreadController {
     @GetMapping
     public R<List<ChatThreadVO>> list() {
         return R.ok(chatThreadService.listMine());
+    }
+
+    @Operation(summary = "历史消息",
+            description = "先校验会话归属，再转调 Python 内部接口读 LangGraph checkpoint。"
+                    + "历史只回放文字，不包含未确认的方案卡片")
+    @GetMapping("/{id}/messages")
+    public R<ChatHistoryVO> messages(@Parameter(description = "会话 ID") @PathVariable String id) {
+        // 先在自己的库里确认这个会话属于当前用户，别人的会话直接 404，
+        // 连 Python 都不会被调到
+        chatThreadService.assertOwned(id);
+        return R.ok(agentClient.chatHistory(id));
     }
 
     @Operation(summary = "重命名")

@@ -1,5 +1,6 @@
 package com.insurance.biz.domain.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -7,6 +8,7 @@ import jakarta.validation.constraints.Size;
 public record ChatRequestDTO(
 
         @NotBlank(message = "threadId 不能为空")
+        @JsonProperty("thread_id")
         String threadId,
 
         @NotBlank(message = "消息内容不能为空")

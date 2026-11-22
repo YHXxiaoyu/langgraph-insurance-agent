@@ -375,15 +375,61 @@ com.insurance.biz
 
 ### 任务
 
-- [ ] 端到端：登录 → 建会话 → 对话 → 流式 → 查历史 → 删除
-- [ ] 前端把 `x-user-id` 换成 `Authorization: Bearer <token>`
-- [ ] **拆 Spring Profile**（Java 进容器时才需要）
+- [x] 端到端：登录 → 建会话 → 对话 → 流式 → 查历史 → 删除
+- [x] 前端把 `x-user-id` 换成 `Authorization: Bearer <token>`
+- [ ] **拆 Spring Profile**（Java 进容器时才需要，本轮未做）
   - `application.yml`：公共配置
   - `application-local.yml`：本地，连 `192.168.100.128`，开 SQL 日志
   - `application-prod.yml`：容器内，host 走环境变量，**关掉 `log-impl`**
   - 原则：profile 文件只放非敏感差异；密码、密钥始终留在 `.env` / 环境变量里
   - 反面教材：hm-service 把 `pw: 123` 明文写进 `application-local.yaml`，且
     `profiles.active` 写死默认值 —— 换环境忘覆盖时会静默连错库
+
+### 实际改动（2026-11-22）
+
+1. **Java 补历史接口** `GET /api/v1/chat-threads/{id}/messages`：
+   先 `assertOwned`，再转调 Python `GET /internal/v1/agent/threads/{id}/messages`。
+   新增 `ChatMessageVO` / `ChatHistoryVO`，返回 `thread_id + messages`。
+2. **对外 VO 统一 snake_case**：`@JsonNaming(SnakeCaseStrategy)` 打在
+   `ProductVO`、`ChatThreadVO`、`ChatHistoryVO`、`UserLoginVO`、`UserInfoVO` 上。
+   没配全局 `spring.jackson.property-naming-strategy`，否则 Python 回调 Java 的
+   `premiumMin` / `limitPerCategory` 会被静默当成 null，筛选条件失效。
+3. **删除会话清 checkpoint**：Java 删完 MySQL 后，异步调 Python
+   `DELETE /internal/v1/agent/threads/{id}`（`AgentClient.deleteThread()` 用
+   `subscribe()`，不阻塞用户），失败只记 warn 日志。Python 侧用
+   `checkpointer.adelete_thread()`，不手写 SQL 碰 LangGraph 私有表。
+4. **产品列表放开匿名访问**：`GET /api/v1/products` permitAll ——
+   首页在未登录时就要展示产品目录。
+5. **前端切到 Java**：
+   - Vite 代理默认 8001 → 8080
+   - `api.ts` 新增 `unwrap()` 拆 `R<T>` 外壳、`authHeaders()` 带 Bearer、
+     `login()`、`event: error` 处理
+   - `auth.ts` 删掉假登录 `DEFAULT_SESSION`，存储键升到 v3
+   - `AuthModal` 真正提交 `/api/v1/auth/login`，带 loading 和错误提示
+   - `AdvisorPage` / `ApplicationPage` 去掉全部 `userId` 参数
+
+### 不改的部分
+
+- Spring Profile 拆分：Java 进容器时再做
+- `/api/v1/insurance-plans/**`：仍未实现，前端静默 404，不影响主链路
+- 历史接口的 `interrupt` 恒为 null：只回放文字，刷新后不恢复未确认的方案卡片
+
+### 验收结果（2026-11-22）
+
+| 项 | 结果 |
+|---|---|
+| 未登录访问 `GET /api/v1/products` | ✅ 12 条，字段为 `clause_name` / `image_url` / `min_premium` |
+| 登录 `tester7308` | ✅ 返回 `token` + `user_id` |
+| 建会话 | ✅ 返回 `created_at` / `updated_at` |
+| 新会话查历史 | ✅ `messages: []`，`interrupt: null` |
+| SSE 对话经 Java 中转 | ✅ 逐条 `event:message`，最后 `event:done` |
+| 对话后查历史 | ✅ user + assistant 两条都在（含此前有 bug 的闲聊路径） |
+| 不带 token 查历史 | ✅ 401 |
+| 其他用户访问该会话 | ✅ 404，未触达 Python |
+| Python 内部历史接口无令牌 / 有令牌 | ✅ 401 / 200 |
+| 删除会话 | ✅ 200；checkpoint 6 行 → 0，writes 14 行 → 0 |
+| 前端 `npm run build` | ✅ tsc + vite 通过 |
+| 浏览器端到端 | ✅ 登录 → 顾问页建会话 → 流式回复 → 刷新后历史恢复 |
 
 ### 验收标准
 

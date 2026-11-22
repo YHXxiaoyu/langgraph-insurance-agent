@@ -1,7 +1,9 @@
 package com.insurance.biz.domain.vo;
 
 import lombok.Data;
-
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import lombok.Data;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -12,6 +14,7 @@ import java.util.List;
  * 也避免把「数据什么时候入库的」这类内部信息暴露出去。
  */
 @Data
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class ProductVO {
 
     private Long id;

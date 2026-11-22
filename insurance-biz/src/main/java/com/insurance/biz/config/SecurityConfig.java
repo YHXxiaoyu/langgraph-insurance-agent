@@ -22,7 +22,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-
+import org.springframework.http.HttpMethod;
 @Configuration
 @EnableWebSecurity
 @EnableConfigurationProperties({JwtProperties.class, InternalProperties.class})
@@ -60,6 +60,9 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        // 产品目录是公开信息：首页未登录也要能浏览，
+                        // 只有下单、咨询、会话这些才需要登录
+                        .requestMatchers(HttpMethod.GET, "/api/v1/products").permitAll()
                         // 内部接口在这里放行，改由 InternalTokenFilter 把关；
                         // 不放行的话 JWT 过滤器会先把 Python 的请求 401 掉
                         .requestMatchers("/internal/**").permitAll()

@@ -74,9 +74,9 @@
 └──────────────┘            └──────────────┘  └──────────────┘
 ```
 
-> 当前阶段：阶段 5 已完成 —— Python 已瘦身为纯 Agent 服务，只暴露 `/healthy` 和
-> 两个内部接口；产品、会话数据全部由 Java 提供，Python 需要产品时反过来调 Java 内部接口。
-> 前端仍直连 Python 服务，所以对话/会话功能暂时不可用，切换要到阶段 6。详见 MIGRATION.md。
+> 当前阶段：阶段 6 已完成 —— 前端只认 Java 的 8080，登录拿 JWT，
+> 会话、历史、SSE 对话全部经 Java 中转；Java 通过 `X-Internal-Token` 调用 Python 的
+> 内部接口，删除会话时顺带清理 Python 侧 checkpoint。详见 MIGRATION.md。
 
 ## 目录结构
 
@@ -99,7 +99,7 @@
 ├── agent-service/                  # Python Agent 服务
 │   ├── app/
 │   │   ├── agents/                 # 意图路由、闲聊、保险顾问、编排图
-│   │   ├── modules/                # chat / chat_thread / product
+│   │   ├── modules/                # chat（内部对话 + 历史消息）
 │   │   ├── rag/                    # 父子块切分、入库流水线、检索器
 │   │   ├── infra/                  # 数据库连接、Checkpointer
 │   │   └── main.py                 # FastAPI 入口（监听 8001）
@@ -199,6 +199,7 @@ uv run python scripts/ingest_rag.py
 | GET | `/api/v1/products` | 在售产品列表 |
 | POST | `/api/v1/chat-threads` | 新建会话 |
 | GET | `/api/v1/chat-threads` | 会话列表 |
+| GET | `/api/v1/chat-threads/{id}/messages` | 历史消息（校验归属后转调 Python） |
 | PATCH | `/api/v1/chat-threads/{id}` | 重命名会话 |
 | DELETE | `/api/v1/chat-threads/{id}` | 删除会话 |
 | POST | `/api/v1/chat` | 对话（SSE 流式返回，Java 校验会话归属后透传给 Python） |
@@ -222,6 +223,7 @@ uv run python scripts/ingest_rag.py
 | GET | `/healthy` | 健康检查 |
 | POST | `/internal/v1/agent/chat` | 对话（SSE，供 Java 调用，需 `X-Internal-Token`） |
 | GET | `/internal/v1/agent/threads/{id}/messages` | 查询历史消息（从 checkpoint 读，供 Java 转发） |
+| DELETE | `/internal/v1/agent/threads/{id}` | 会话删除后清理 checkpoint（供 Java 异步调用） |
 
 > 阶段 5 之后 Python 不再提供任何公开接口，业务数据一律由 Java 提供；
 > Python 需要产品数据时，通过 `app/infra/java_client.py` 回调 Java 的 `/internal/v1/**`。
@@ -236,7 +238,7 @@ uv run python scripts/ingest_rag.py
 | 3 | 业务接口（会话 CRUD、内部接口、接口文档） | ✅ |
 | 4 | AgentClient + SSE 透传 | ✅ |
 | 5 | Python 瘦身（删除业务模块，改调内部接口） | ✅ |
-| 6 | 端到端联调 | ⬜ |
+| 6 | 端到端联调（前端切 Java + JWT） | ✅ |
 
 ## 说明
 

@@ -1,15 +1,7 @@
 import type { AuthSession } from './types';
 
-const STORAGE_KEY = 'insurance-mall-auth-v2';
-
-export const DEFAULT_SESSION: AuthSession = {
-  user: {
-    id: 1,
-    username: 'heima',
-    email: 'heima@example.com',
-    displayName: '黑马-虎哥',
-  },
-};
+// v3：从「本地假登录」换成真 JWT，旧缓存里没有 token，必须作废
+const STORAGE_KEY = 'insurance-mall-auth-v3';
 
 export function readSession(): AuthSession | null {
   try {

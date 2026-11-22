@@ -23,7 +23,15 @@ export interface UserSummary {
 }
 
 export interface AuthSession {
+  token: string;
   user: UserSummary;
+}
+
+/** 登录接口返回的原始结构，Java 侧字段是 snake_case */
+export interface LoginResult {
+  token: string;
+  user_id: number;
+  username: string;
 }
 
 export interface ChatThread {
