@@ -10,7 +10,7 @@ RUN npm run build
 FROM nginx:1.27-alpine
 
 ENV BACKEND_HOST=backend \
-    BACKEND_PORT=8001
+    BACKEND_PORT=8080
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/templates/default.conf.template
