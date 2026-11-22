@@ -282,13 +282,16 @@ com.insurance.biz
 - [x] Python 侧新增 `POST /internal/v1/agent/chat`，用 `X-Internal-Token` 校验
 - [x] 归属校验放在建流之前（`assertOwned`），非法会话直接 404
 
-### 进度（2026-11-21）
+### 进度（2026-11-22）
 
 - 代码全部完成，`mvn compile` 与 Python 导入检查通过，路由已注册，两边 `INTERNAL_TOKEN` 一致
-- **运行时验收待做**（8 项验收表见下）
+- **运行时验收 8 项全部通过**（结果见下表）
 - 超时说明：Spring 6.2 的 `ReactiveTypeHandler` 给 `Flux<ServerSentEvent>` 创建 `SseEmitter`
   时固定用 `-1`（永不超时），`spring.mvc.async.request-timeout` 对这条路径不生效；
   真正起作用的是 `AgentClient` 的 `responseTimeout(120s)`（只管到收到响应头为止）
+- SSE 数据格式：Python 的 `fastapi.sse.ServerSentEvent` 会把字符串 **JSON 序列化**，
+  线上是 `data: "你好"`（带引号）；Java 侧原样透传，前端 `parseSseMessage` 已经 `JSON.parse`，
+  两边格式一致，不用额外处理
 
 ### 验收标准
 
@@ -296,16 +299,16 @@ com.insurance.biz
 
 ### 验收表
 
-| # | 场景 | 期望 |
-|---|---|---|
-| 1 | 不带 token 调 `POST /api/v1/chat` | 401 |
-| 2 | 带 token + 别人的 threadId | 404 |
-| 3 | 带 token + 自己的 threadId | 200 `text/event-stream`，收到 `message` 若干 + `done` |
-| 4 | message 为空 | 400 |
-| 5 | 停掉 Python 再调 | 200 且收到一条 `event: error` |
-| 6 | 直接调 Python 内部接口，不带令牌 | 401 |
-| 7 | 同上，错误令牌 | 401 |
-| 8 | 同上，正确令牌 | 200，能收到 SSE |
+| # | 场景 | 期望 | 结果（2026-11-22） |
+|---|---|---|---|
+| 1 | 不带 token 调 `POST /api/v1/chat` | 401 | ✅ 401「未登录或登录已过期」 |
+| 2 | 带 token + 别人的 threadId | 404 | ✅ 404「会话不存在」 |
+| 3 | 带 token + 自己的 threadId | 200 `text/event-stream`，收到 `message` 若干 + `done` | ✅ 200，32 条 `message` + 1 条 `done` |
+| 4 | message 为空 | 400 | ✅ 400「消息内容不能为空」 |
+| 5 | 停掉 Python 再调 | 200 且收到一条 `event: error` | ✅ 200，`error: Agent 服务暂时不可用`，Java 日志有「调用 Agent 服务失败」 |
+| 6 | 直接调 Python 内部接口，不带令牌 | 401 | ✅ 401 |
+| 7 | 同上，错误令牌 | 401 | ✅ 401 |
+| 8 | 同上，正确令牌 | 200，能收到 SSE | ✅ 200，24 条 `message` + 1 条 `done` |
 
 ---
 

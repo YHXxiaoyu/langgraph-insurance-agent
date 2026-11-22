@@ -55,7 +55,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/health", summary="健康检测接口")
+@app.get("/healthy", summary="健康检测接口")
 async def health_check() -> dict[str, str]:
     logger.info("执行健康检查")
     return {"status": "ok"}

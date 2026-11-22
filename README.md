@@ -74,7 +74,8 @@
 └──────────────┘            └──────────────┘  └──────────────┘
 ```
 
-> 当前阶段：Java 侧的 SSE 透传已实现（`POST /api/v1/chat`），Python 也有对应的内部接口，
+> 当前阶段：阶段 4 已完成并通过 8 项运行时验收 —— Java 侧 `POST /api/v1/chat`
+> 校验会话归属后，把 Python Agent 的 SSE 流原样透传给浏览器。
 > 但前端仍直连 Python 服务，切换要到阶段 6。进度详见 MIGRATION.md。
 
 ## 目录结构
@@ -233,7 +234,7 @@ uv run python scripts/ingest_rag.py
 | 2 | JWT 鉴权 | ✅ |
 | 2.5 | 包结构对齐 `domain/{dto,po,vo}` 分层 | ✅ |
 | 3 | 业务接口（会话 CRUD、内部接口、接口文档） | ✅ |
-| 4 | AgentClient + SSE 透传 | 🟡 代码完成，待运行时验收 |
+| 4 | AgentClient + SSE 透传 | ✅ |
 | 5 | Python 瘦身（删除业务模块，改调内部接口） | ⬜ |
 | 6 | 端到端联调 | ⬜ |
 
