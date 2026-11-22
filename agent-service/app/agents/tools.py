@@ -1,12 +1,12 @@
 from decimal import Decimal
 
 from langchain.tools import tool
-from fastapi.encoders import jsonable_encoder
 
-from app.infra.database import AsyncSessionFactory
-from app.modules.product.models import Product
-from app.modules.product.service import ProductService
+from app.core.logging import get_logger
+from app.infra.java_client import JavaServiceError, call_java
 from app.rag.models import ParentChunk
+
+logger = get_logger(__name__)
 
 
 @tool
@@ -24,17 +24,20 @@ async def query_candidate_products(
         limit_per_category: 每个险种最多返回的产品数量，可选参数，默认5。
     """
 
-    async with AsyncSessionFactory() as session:
-        # 1.初始化Service
-        service = ProductService(session)
-        # 2.调用Service，得到候选产品
-        products: list[Product] = await service.list_candidates(
-            categories,
-            premium_min,
-            limit_per_category
-        )
-        # 3.返回给AI，最好把Product处理成json返回，json就是字符串
-        return jsonable_encoder(products)
+    # 1.组装参数，字段名对应 Java 侧的 ProductCandidateQueryDTO
+    payload = {
+        "categories": categories,
+        "premiumMin": str(premium_min) if premium_min is not None else None,
+        "limitPerCategory": limit_per_category,
+    }
+
+    try:
+        # 2.调 Java 内部接口，业务数据不再由 Python 自己查库
+        return await call_java("POST", "/internal/v1/products/candidates", payload)
+    except JavaServiceError as exc:
+        # 3.失败时给模型一个可读的结果，让它能自然地告诉用户"暂时查不了"
+        logger.error("查询候选产品失败", reason=str(exc))
+        return {"error": "产品服务暂时不可用，请稍后再试"}
 
 @tool
 async def retrieve_insurance_clause(

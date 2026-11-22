@@ -78,6 +78,19 @@ class RAGSettings(EnvSettings):
     def milvus_url(self) -> str:
         return f"http://{self.milvus_host}:{self.milvus_port}"
 
+class JavaSettings(EnvSettings):
+    """Java 业务服务相关配置"""
+    base_url: str = Field(
+        alias="JAVA_BASE_URL",
+        default="http://127.0.0.1:8080",
+        description="Java 服务地址，Python 通过内部接口回调它",
+    )
+    timeout: float = Field(
+        alias="JAVA_TIMEOUT",
+        default=10.0,
+        description="调用 Java 内部接口的超时时间（秒）",
+    )
+
 class SecuritySettings(EnvSettings):
     """服务间调用鉴权"""
     internal_token: str = Field(
@@ -91,6 +104,7 @@ class Settings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     rag: RAGSettings = Field(default_factory=RAGSettings)
+    java: JavaSettings = Field(default_factory=JavaSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
 
 # 项目启动直接初始化

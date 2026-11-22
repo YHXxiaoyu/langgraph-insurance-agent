@@ -45,4 +45,10 @@ public class InternalProductController {
     public R<ProductVO> detail(@Parameter(description = "产品 ID") @PathVariable Long id) {
         return R.ok(productService.getDetail(id));
     }
+    @Operation(summary = "在售产品全量列表",
+            description = "知识库灌入脚本用：按 id 倒序返回全部在售产品（含 clauseName）")
+    @GetMapping
+    public R<List<ProductVO>> list() {
+        return R.ok(productService.listOnSale());
+    }
 }

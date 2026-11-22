@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,11 +13,22 @@ from mineru import MinerU
 
 from app.core.config import APP_ROOT, settings
 from app.infra.database import AsyncSessionFactory
-from app.modules.product.models import Product
 from app.rag.models import ParentChunk
 from app.rag.repository import ParentChunkRepository
 from app.core.logging import get_logger
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class ProductRef:
+    """灌入知识库时需要的产品信息。
+
+    以前直接用 SQLAlchemy 的 Product 实体；阶段 5 之后 Python 不连业务库，
+    这里只保留 RAG 流程真正用到的三个字段，数据由 Java 内部接口提供。
+    """
+    id: int
+    name: str
+    clause_name: str
 
 
 MARKDOWN_OPTIMIZATION_PROMPT = """
@@ -61,7 +73,7 @@ class RAGPipeline:
         )
         logger.info("RAG Pipeline 初始化完成✅️")
 
-    async def ingest(self, product: Product) -> None:
+    async def ingest(self, product: ProductRef) -> None:
         # 1.解析并优化保险条款
         markdown = self._parse_and_optimize(product.clause_name)
 
@@ -91,7 +103,7 @@ class RAGPipeline:
     def _chunk(
         self,
         markdown: str,
-        product: Product,
+        product: ProductRef,
     ) -> tuple[list[ParentChunk], list[Document]]:
         # 1.按照Markdown标题切分父块
         sections = self._markdown_splitter.split_text(markdown)

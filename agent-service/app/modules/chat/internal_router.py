@@ -1,12 +1,13 @@
 import hmac
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.sse import EventSourceResponse
 
 from app.core.config import settings
 from app.core.exceptions import ApplicationError
-from .schema import InternalChatRequest
+from .schema import ChatHistoryResponse, InternalChatRequest
 from .service import ChatService
 
 router = APIRouter(prefix="/internal/v1/agent", tags=["内部接口（Java 调用）"])
@@ -40,3 +41,11 @@ async def internal_chat(request: InternalChatRequest, http_request: Request):
     service = ChatService(http_request.app.state.agent)
     async for sse in service.internal_chat_stream(request.thread_id, request.message):
         yield sse
+
+
+@router.get("/threads/{thread_id}/messages", response_model=ChatHistoryResponse,
+            dependencies=[Depends(verify_internal_token)])
+async def chat_history(thread_id: UUID, http_request: Request):
+    """历史消息：从 checkpoint 读，供 Java 转给前端（MIGRATION 里的方案 A）"""
+    service = ChatService(http_request.app.state.agent)
+    return await service.chat_history(thread_id)

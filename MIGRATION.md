@@ -320,9 +320,26 @@ com.insurance.biz
 |---|---|
 | 删除整个模块 | `app/modules/product/` |
 | 删除整个模块 | `app/modules/chat_threads/` |
-| 路由前缀改 `/internal/v1/agent` | `app/modules/chat/router.py` |
+| 删除公开路由 | `app/modules/chat/router.py`（内部路由在阶段 4 已经建好） |
 | 删除会话归属校验 | `app/modules/chat/service.py`（`required_owner` 相关代码） |
 | 工具改 HTTP 回调 | `app/agents/tools.py`（`query_candidate_products`） |
+
+### 实际改动（2026-11-22）
+
+比原计划多做了三件事：
+
+1. **历史消息保留成内部接口**：`GET /internal/v1/agent/threads/{id}/messages`。
+   原计划把 `chat_threads/` 整个删掉，但历史只依赖 LangGraph checkpoint、不碰业务库，
+   而阶段 6 前端查历史还要用，所以留在 Python 侧（MIGRATION「必须拍板」里的方案 A）。
+2. **Java 补 `GET /internal/v1/products`**：知识库灌入脚本原来从 PostgreSQL 读产品清单，
+   删掉 product 模块后改调 Java。这个接口只给灌库脚本用。
+3. **修复节点返回 key 的 bug**：各节点原来返回 `{"message": [...]}`，而状态里声明的通道是
+   `messages`，多出来的 key 被丢弃 —— 助手回复从来没进过状态，导致历史只有用户消息、
+   `find_previous_ai_message` 永远取不到上一轮 AI 回复。已统一改成 `messages`
+   （`chitchat.py` 2 处、`orchestrator.py` 3 处）。
+
+新增文件：`app/infra/java_client.py`（httpx 异步客户端，懒加载单例 + 自动带
+`X-Internal-Token` + 拆 `R<T>` 外壳）。
 
 ### 不动的部分
 
@@ -338,6 +355,19 @@ com.insurance.biz
 
 - Python 服务能独立启动（不依赖 `products` / `chat_threads` 表）
 - `curl` 能正常打出 SSE 响应
+
+### 验收结果（2026-11-22）
+
+| 项 | 结果 |
+|---|---|
+| Python 独立启动，路由只剩 `/healthy` + 两个内部接口 | ✅ |
+| 公开 `POST /api/v1/chat` 已移除 | ✅ 404 |
+| Java → Python 完整对话 | ✅ 200，33 条 `message` + 1 条 `done` |
+| 内部历史接口不带令牌 / 带令牌 | ✅ 401 / 200 |
+| 历史内容包含 user + assistant | ✅ 修复 key 后验证通过 |
+| Java 内部产品列表 | ✅ 12 条在售产品 |
+| 工具 `query_candidate_products` 走 Java 取数 | ✅ 返回 2 条 medical 产品 |
+| 灌库脚本 `find_all_products()` | ✅ 12 个 `ProductRef` |
 
 ---
 

@@ -1,56 +1,72 @@
-"""RAG知识库构建脚本：查询所有保险产品，解析条款并写入向量库和数据库"""
-
 import asyncio
+import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from langchain_milvus import BM25BuiltInFunction, Milvus
-from langchain_ollama import OllamaEmbeddings
-
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.infra.database import AsyncSessionFactory
-from app.modules.product.service import ProductService
-from app.rag.pipeline import RAGPipeline
+from app.infra.database import close_database
+from app.infra.java_client import call_java, close_client
+from app.rag.pipeline import ProductRef, RAGPipeline
+from langchain_community.embeddings import DashScopeEmbeddings
+from dotenv import load_dotenv
+load_dotenv()
 
 logger = get_logger(__name__)
 
 
-async def main() -> None:
-    # 1.初始化EmbeddingModel
-    embeddings = OllamaEmbeddings(
-        model="qwen3-embedding:0.6b",  # 性价比高的模型
-        dimensions=1024,  # 可选：减少维度以节省存储
+def create_vector_store() -> Milvus:
+    embeddings = DashScopeEmbeddings(
+        model="text-embedding-v4",
     )
-
-    # 2.初始化VectorStore，会自动创建Collection
-    vector_store = Milvus(
+    return Milvus(
         embedding_function=embeddings,
         collection_name="insurance_collection",
-        builtin_function=BM25BuiltInFunction(analyzer_params={"type": "chinese"}),
+        builtin_function=BM25BuiltInFunction(
+            analyzer_params={"type": "chinese"}
+        ),
         vector_field=["dense", "sparse"],
         connection_args={"uri": settings.rag.milvus_url},
         auto_id=True,
     )
 
-    # 3.初始化Pipeline
+
+async def find_all_products() -> list[ProductRef]:
+    """产品清单改由 Java 内部接口提供，Python 不再查业务库"""
+    rows = await call_java("GET", "/internal/v1/products")
+    return [
+        ProductRef(id=row["id"], name=row["name"], clause_name=row["clauseName"])
+        for row in rows
+    ]
+
+
+async def main() -> None:
+    vector_store = create_vector_store()
     pipeline = RAGPipeline(vector_store)
 
     try:
-        # 4.查询所有products
-        async with AsyncSessionFactory() as session:
-            service = ProductService(session)
-            products = await service.list_product()
-        logger.info(f"查询到 {len(products)} 个产品")
+        products = await find_all_products()
+        logger.info("开始构建RAG知识库", product_count=len(products))
 
-        # 5.逐个产品构建知识库
-        for product in products:
-            logger.info(f"正在构建知识库: {product.name}...")
+        for index, product in enumerate(products, start=1):
+            logger.info(
+                "开始处理保险产品",
+                progress=f"{index}/{len(products)}",
+                product_id=product.id,
+                product_name=product.name,
+            )
             await pipeline.ingest(product)
-            logger.info(f"完成: {product.name}")
 
-        logger.info("RAG知识库构建完成✅")
+        logger.info("RAG知识库构建完成", product_count=len(products))
     finally:
         pipeline.close()
         vector_store.client.close()
+        await close_client()
+        await close_database()
 
 
 if __name__ == "__main__":

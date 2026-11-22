@@ -74,9 +74,9 @@
 └──────────────┘            └──────────────┘  └──────────────┘
 ```
 
-> 当前阶段：阶段 4 已完成并通过 8 项运行时验收 —— Java 侧 `POST /api/v1/chat`
-> 校验会话归属后，把 Python Agent 的 SSE 流原样透传给浏览器。
-> 但前端仍直连 Python 服务，切换要到阶段 6。进度详见 MIGRATION.md。
+> 当前阶段：阶段 5 已完成 —— Python 已瘦身为纯 Agent 服务，只暴露 `/healthy` 和
+> 两个内部接口；产品、会话数据全部由 Java 提供，Python 需要产品时反过来调 Java 内部接口。
+> 前端仍直连 Python 服务，所以对话/会话功能暂时不可用，切换要到阶段 6。详见 MIGRATION.md。
 
 ## 目录结构
 
@@ -210,6 +210,7 @@ uv run python scripts/ingest_rag.py
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/internal/v1/products/candidates` | 候选产品查询（推荐流程用） |
+| GET | `/internal/v1/products` | 在售产品全量列表（知识库灌入脚本用） |
 | GET | `/internal/v1/products/{id}` | 产品详情 |
 
 需请求头 `X-Internal-Token`，不接受用户 JWT。
@@ -219,12 +220,11 @@ uv run python scripts/ingest_rag.py
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/healthy` | 健康检查 |
-| POST | `/api/v1/chat` | 对话（SSE 流式返回，过渡期保留给前端） |
 | POST | `/internal/v1/agent/chat` | 对话（SSE，供 Java 调用，需 `X-Internal-Token`） |
-| GET | `/api/v1/chat-threads/{id}/messages` | 查询历史消息 |
+| GET | `/internal/v1/agent/threads/{id}/messages` | 查询历史消息（从 checkpoint 读，供 Java 转发） |
 
-> 阶段 5 会把会话管理接口移交给 Java，公开的 `/api/v1/chat` 随之移除，
-> 只保留 `/internal/v1/agent/chat`。
+> 阶段 5 之后 Python 不再提供任何公开接口，业务数据一律由 Java 提供；
+> Python 需要产品数据时，通过 `app/infra/java_client.py` 回调 Java 的 `/internal/v1/**`。
 
 ## 开发进度
 
@@ -235,7 +235,7 @@ uv run python scripts/ingest_rag.py
 | 2.5 | 包结构对齐 `domain/{dto,po,vo}` 分层 | ✅ |
 | 3 | 业务接口（会话 CRUD、内部接口、接口文档） | ✅ |
 | 4 | AgentClient + SSE 透传 | ✅ |
-| 5 | Python 瘦身（删除业务模块，改调内部接口） | ⬜ |
+| 5 | Python 瘦身（删除业务模块，改调内部接口） | ✅ |
 | 6 | 端到端联调 | ⬜ |
 
 ## 说明
