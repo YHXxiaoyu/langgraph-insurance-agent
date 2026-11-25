@@ -1,6 +1,7 @@
 [project]
 name = "agent-service"
 version = "0.1.0"
+description = "Insurance AI agent service"
 requires-python = ">=3.14"
 dependencies = [
     "aiostream>=0.7.1",
@@ -26,7 +27,7 @@ dependencies = [
     "pyjwt>=2.13.0",
     "pymilvus>=3.0.0",
     "pypdf>=6.14.2",
-    "sqlalchemy>=2.0.51",
+    "sqlalchemy[asyncio]>=2.0.51",
     "structlog>=26.1.0",
     "uvicorn>=0.51.0",
 ]
@@ -35,3 +36,15 @@ dependencies = [
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# 测试里有大量 async 函数，自动套 asyncio 事件循环，不用每个都写 @pytest.mark.asyncio
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

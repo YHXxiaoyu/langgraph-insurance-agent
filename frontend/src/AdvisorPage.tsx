@@ -19,6 +19,7 @@ import { attachInfoToLastAssistantMessage, normalizeAdditionalInfo } from './add
 import {
   ApiError,
   createChatThread,
+  errorText,
   deleteChatThread,
   getChatHistory,
   getInsurancePlan,
@@ -78,7 +79,7 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
         onSessionExpired();
         return;
       }
-      setError(reason instanceof Error ? reason.message : '会话历史加载失败');
+      setError(errorText(reason, '会话历史加载失败'));
     } finally {
       setLoadingMessages(false);
     }
@@ -107,7 +108,7 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
         onSessionExpired();
         return;
       }
-      setError(reason instanceof Error ? reason.message : '新建会话失败');
+      setError(errorText(reason, '新建会话失败'));
     }
   }
 
@@ -128,7 +129,7 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
         onSessionExpired();
         return;
       }
-      setError(reason instanceof Error ? reason.message : '重命名会话失败');
+      setError(errorText(reason, '重命名会话失败'));
     }
   }
 
@@ -150,7 +151,7 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
         onSessionExpired();
         return;
       }
-      setError(reason instanceof Error ? reason.message : '删除会话失败');
+      setError(errorText(reason, '删除会话失败'));
     }
   }
 
@@ -180,7 +181,7 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
             onSessionExpired();
             return;
           }
-          setError(reason instanceof Error ? reason.message : '会话加载失败');
+          setError(errorText(reason, '会话加载失败'));
         }
       } finally {
         if (!ignore) setLoadingThreads(false);
@@ -224,7 +225,8 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
 
   async function sendMessage() {
     const content = input.trim();
-    if (!content || sending) return;
+    // 有未处理的确认卡片时不允许发新消息（输入框已禁用，这里再兜一层）
+    if (!content || sending || pendingInterrupt) return;
     setInput('');
     setSending(true);
     setError(null);
@@ -260,7 +262,7 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
         onSessionExpired();
         return;
       }
-      setError(reason instanceof Error ? reason.message : '消息发送失败');
+      setError(errorText(reason, '消息发送失败'));
       setMessages((current) => current.filter((item) => item.content !== ''));
     } finally {
       setSending(false);
@@ -302,7 +304,7 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
         onSessionExpired();
         return;
       }
-      setError(reason instanceof Error ? reason.message : '操作提交失败');
+      setError(errorText(reason, '操作提交失败'));
       removeEmptyAssistantMessage();
     } finally {
       setSending(false);
@@ -440,8 +442,11 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
             <Input.TextArea
               value={input}
               autoSize={{ minRows: 1, maxRows: 4 }}
-              placeholder="描述你的保险需求，例如：30岁，有医保，预算每年3000元，想配置医疗险和重疾险"
-              disabled={sending}
+              placeholder={pendingInterrupt
+                ? '请先处理上方的方案确认卡片'
+                : '描述你的保险需求，例如：30岁，有医保，预算每年3000元，想配置医疗险和重疾险'}
+              // 有未处理的确认卡片时禁止继续输入：图停在断点上，新消息会把待确认方案顶掉
+              disabled={sending || pendingInterrupt !== null}
               onChange={(event) => setInput(event.target.value)}
               onPressEnter={(event) => {
                 if (!event.shiftKey) {
@@ -450,7 +455,13 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
                 }
               }}
             />
-            <Button type="primary" icon={<SendOutlined />} loading={sending} onClick={() => void sendMessage()}>
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              loading={sending}
+              disabled={pendingInterrupt !== null}
+              onClick={() => void sendMessage()}
+            >
               发送
             </Button>
           </div>

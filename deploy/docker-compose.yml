@@ -70,7 +70,8 @@ services:
       - insurance-net
 
   minio:
-    image: minio/minio:RELEASE.2024-04-18T19-09-19Z
+    # 原版 minio/minio 在国内拉不动，换成 pgsty 的等价镜像
+    image: pgsty/minio:latest
     container_name: hm-minio
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
@@ -119,7 +120,7 @@ services:
     networks:
       - insurance-net
   attu:
-    image: zilliz/attu:v3.0.0-beta.6
+    image: zilliz/attu:v3.0.0
     ports:
       - "3000:3000"
     environment:
@@ -129,6 +130,76 @@ services:
     depends_on:
       milvus:
         condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - insurance-net
+
+  # ---------- 应用 ----------
+
+  # Java 业务服务：唯一对外入口
+  backend:
+    build:
+      context: ../insurance-biz
+    image: hm-insurance/backend:latest
+    container_name: hm-backend
+    env_file:
+      - ../insurance-biz/.env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # 容器网络里用服务名，覆盖 .env 里的 IP
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      AGENT_BASE_URL: http://agent:8001
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      agent:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - insurance-net
+
+  # Python Agent 服务：主要对内网暴露，端口留着方便排查
+  agent:
+    build:
+      context: ../agent-service
+    image: hm-insurance/agent:latest
+    container_name: hm-agent
+    env_file:
+      - ../agent-service/.env
+    environment:
+      APP_HOST: 0.0.0.0
+      DB_HOST: postgres
+      DB_PORT: 5432
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+      JAVA_BASE_URL: http://backend:8080
+    ports:
+      - "${AGENT_PORT:-8001}:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - insurance-net
+
+  # 前端静态站点 + Nginx 反向代理（/api 转发给 backend:8080）
+  frontend:
+    build:
+      context: ../frontend
+    image: hm-insurance/frontend:latest
+    container_name: hm-frontend
+    environment:
+      BACKEND_HOST: backend
+      BACKEND_PORT: 8080
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      - backend
     restart: unless-stopped
     networks:
       - insurance-net

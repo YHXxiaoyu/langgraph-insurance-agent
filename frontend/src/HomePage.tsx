@@ -3,10 +3,10 @@ import {
   LoginOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Empty, Modal, Segmented, Skeleton } from 'antd';
+import { Alert, Button, Empty, Modal, Pagination, Segmented, Skeleton } from 'antd';
 import { useEffect, useState } from 'react';
 
-import { listProducts } from './api';
+import { errorText, listProducts } from './api';
 import { AuthModal } from './AuthModal';
 import { CATEGORY_LABELS } from './categoryLabels';
 import { ProductCard } from './ProductCard';
@@ -21,6 +21,9 @@ const CATEGORY_OPTIONS: Array<{ label: string; value: CategoryFilter }> = [
   { label: '寿险', value: 'life' },
   { label: '意外险', value: 'accident' },
 ];
+
+/** 每页条数：与商品网格的 3 列 × 2 行对齐，最后一行不会缺角 */
+const PAGE_SIZE = 6;
 
 interface HomePageProps {
   session: AuthSession | null;
@@ -45,22 +48,31 @@ export function HomePage({
   const [consultAfterLogin, setConsultAfterLogin] = useState(initialAuthOpen);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    listProducts(category, controller.signal)
-      .then(setProducts)
+    listProducts(category, page, PAGE_SIZE, controller.signal)
+      .then((result) => {
+        setProducts(result.items);
+        setTotal(result.total);
+        // 切险种后当前页可能超出范围（比如在第 2 页切到只有 1 页的险种）
+        if (result.pages > 0 && page > result.pages) {
+          setPage(1);
+        }
+      })
       .catch((reason) => {
         if (reason instanceof DOMException && reason.name === 'AbortError') return;
-        setError(reason instanceof Error ? reason.message : '产品加载失败');
+        setError(errorText(reason, '产品加载失败'));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, reloadKey]);
+  }, [category, page, reloadKey]);
 
   function openAuth(continueToAdvisor = false) {
     setConsultAfterLogin(continueToAdvisor);
@@ -128,13 +140,17 @@ export function HomePage({
               <h2>保险产品</h2>
               <p>根据保障需求选择合适的产品类型</p>
             </div>
-            <span>{loading ? '正在加载' : `共 ${products.length} 款产品`}</span>
+            <span>{loading ? '正在加载' : `共 ${total} 款产品`}</span>
           </div>
           <div className="category-filter" aria-label="按保险类型筛选">
             <Segmented<CategoryFilter>
               value={category}
               options={CATEGORY_OPTIONS}
-              onChange={setCategory}
+              onChange={(value) => {
+                // 切险种后必须回到第 1 页，否则可能停在一个不存在的页码上
+                setCategory(value);
+                setPage(1);
+              }}
             />
           </div>
 
@@ -156,11 +172,23 @@ export function HomePage({
               ))}
             </div>
           ) : products.length ? (
-            <div className="product-grid">
-              {products.map((product) => (
-                <ProductCard key={product.id} product={product} onView={setSelectedProduct} />
-              ))}
-            </div>
+            <>
+              <div className="product-grid">
+                {products.map((product) => (
+                  <ProductCard key={product.id} product={product} onView={setSelectedProduct} />
+                ))}
+              </div>
+              {total > PAGE_SIZE ? (
+                <Pagination
+                  className="products-pagination"
+                  current={page}
+                  pageSize={PAGE_SIZE}
+                  total={total}
+                  showSizeChanger={false}
+                  onChange={setPage}
+                />
+              ) : null}
+            </>
           ) : (
             <Empty description="该类型暂时没有可展示的产品" />
           )}

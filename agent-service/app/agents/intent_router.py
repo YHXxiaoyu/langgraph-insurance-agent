@@ -1,15 +1,10 @@
 import re
 from typing import Literal
-
-from langchain.chat_models import init_chat_model
+from app.agents.models import build_fallback_model, build_primary_model
 from langchain_core.messages import SystemMessage, HumanMessage
-
-from app.core.config import settings
 from app.core.logging import get_logger
-from .schemas import RouteResult
+from app.agents.schemas import RouteResult
 logger = get_logger(__name__)
-
-
 SYSTEM_PROMPT = """
 你是保险商城智能客服的意图识别节点，请判断用户消息应该交给哪个工作流。
 
@@ -22,42 +17,49 @@ intent只能从以下选项中选择：
 """.strip()
 
 class IntentRouter:
-
     def __init__(self):
-        # 初始化模型
-        model = init_chat_model(
-            "deepseek-v4-flash",
-            api_key=settings.llm.api_key,
-            extra_body = {"thinking": {"type": "disabled"}}
+        # 主模型 + 备用模型各自绑定结构化输出
+        # 这里不用 with_fallbacks：它内部重试时会另起一条流式链路，
+        # 备用模型吐出的整段 {"intent": ...} 会绕过节点过滤，直接出现在用户气泡里。
+        # 自己 try/except 切换，两次调用都在同一个普通 invoke 里，不会漏进流。
+        self.primary = build_primary_model(streaming=False).with_structured_output(RouteResult)
+        fallback = build_fallback_model(streaming=False)
+        self.fallback = (
+            fallback.with_structured_output(RouteResult) if fallback is not None else None
         )
-        # 给模型绑定结构化输出，让模型按照要求输出路由结果
-        self.route_model = model.with_structured_output(RouteResult).with_config({
-            "tags": ["nostream"]
-        })
 
     def route(
-        self,
-        query: str, # 用户本轮的提问
-        context: str    # 历史对话的上下文（上一轮的工作流名字、上一轮AI回复的消息）
-    ) -> RouteResult:
+            self,
+            query: str, # 用户输入的查询
+            context: str  # 历史上下文信息（上一轮工作流的名字，上一轮AI回复的消息）
+    )-> RouteResult:
         try:
-            # 1.寒暄识别（基于规则，正则表达式匹配）
+        #1.寒暄识别（基于规则，正则表达式匹配）
             intent = match_social_intent(query)
             if intent:
-                # 识别出是寒暄中的一种，返回寒暄固定回复
+                #2.如果是寒暄，直接返回固定回复
                 return response_by_social_intent(intent)
 
-            # 2.基于模型识别意图
-            result: RouteResult = self.route_model.invoke([
+            #2.如果不是寒暄，调用LLM模型进行意图识别
+            prompt = [
                 SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(content=f"用户问题:{query}\n 历史上下文：{context}\n")
-            ])
-        except Exception:
-            # 兜底方案，意图识别失败了，返回固定回复
-            result = RouteResult(intent="fallback", reason="意图识别出现异常")
+                HumanMessage(content=f"历史上下文：{context}\n用户消息：{query}")
+            ]
+            try:
+                result = self.primary.invoke(prompt)
+            except Exception as exc:
+                # 主模型超时/报错：换备用模型再试一次
+                if self.fallback is None:
+                    raise
+                logger.warning("主模型调用失败，切换备用模型", reason=str(exc))
+                result = self.fallback.invoke(prompt)
+            # 必须显式返回：漏掉这行 route() 返回 None，调用方取 .intent 直接崩
+            return result
 
-        logger.info(f"意图识别完成，intent:{result.intent}, reason:{result.reason}")
-        return result
+        except Exception as exc:
+            # 主备模型都不可用：转人工，不让用户对着空白气泡干等
+            logger.error("意图识别失败，转人工", reason=str(exc))
+            return RouteResult(intent="human_handoff", reason="模型服务不可用，转人工")
 
 
 # 基于规则的识别是否为寒暄
@@ -114,7 +116,5 @@ def response_by_social_intent(intent: SocialIntent):
 
     return SOCIAL_RESPONSES.get(intent)
 
-
-
-# 创建好对象，方便对方使用
+#创建IntentRouter实例
 router = IntentRouter()

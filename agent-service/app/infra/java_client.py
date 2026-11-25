@@ -5,7 +5,7 @@
 """
 
 from typing import Any
-
+from app.core.trace import current_trace_id
 import httpx
 
 from app.core.config import settings
@@ -48,7 +48,9 @@ async def call_java(method: str, path: str, payload: Any = None) -> Any:
     网络错误、非 200、业务码不是 200 一律抛 JavaServiceError。
     """
     try:
-        response = await _client_instance().request(method, path, json=payload)
+        # 带上 traceId，Java 侧在同一串日志里就能看到这次回调
+        response = await _client_instance().request(
+            method, path, json=payload, headers=_trace_header())
     except httpx.HTTPError as exc:
         logger.error("调用 Java 内部接口失败", path=path, reason=str(exc))
         raise JavaServiceError("Java 服务暂时不可用") from exc
@@ -63,3 +65,8 @@ async def call_java(method: str, path: str, payload: Any = None) -> Any:
     if body.get("code") != 200:
         raise JavaServiceError(body.get("msg") or "Java 内部接口业务失败")
     return body.get("data")
+
+def _trace_header() -> dict[str, str]:
+    """有 trace_id 就带，没有就不加，避免发出空值头。"""
+    trace_id = current_trace_id()
+    return {"X-Trace-Id": trace_id} if trace_id else {}

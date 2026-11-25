@@ -1,6 +1,7 @@
 package com.insurance.biz.controller;
 
 import com.insurance.biz.client.AgentClient;
+import com.insurance.biz.common.exception.BadRequestException;
 import com.insurance.biz.config.OpenApiConfig;
 import com.insurance.biz.domain.dto.ChatRequestDTO;
 import com.insurance.biz.service.IChatThreadService;
@@ -12,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,12 +42,15 @@ public class ChatController {
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> chat(@Valid @RequestBody ChatRequestDTO dto) {
 
-        // 这两行必须在当前请求线程里跑完：UserContext 读的是 SecurityContextHolder，
-        // 本质是 ThreadLocal，进了 Flux 的订阅线程就取不到了。
-        // 校验放在建流之前，别人的会话能干净地 404，不会先建流再断。
+        // 普通提问和"确认方案"是两条路径，至少得有一个
+        if (!StringUtils.hasText(dto.message()) && dto.decision() == null) {
+            throw new BadRequestException("message 和 decision 不能同时为空");
+        }
+
         Long userId = UserContext.getUserId();
         chatThreadService.assertOwned(dto.threadId());
 
-        return agentClient.streamChat(dto.threadId(), userId, dto.message());
+        return agentClient.streamChat(
+                dto.threadId(), userId, dto.message(), dto.decision());
     }
 }

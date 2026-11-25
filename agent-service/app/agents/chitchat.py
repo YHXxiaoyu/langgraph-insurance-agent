@@ -1,16 +1,19 @@
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, SystemMessage
-from langgraph.constants import START, END
 from langgraph.graph import StateGraph
-
-from app.core.config import settings
+from app.agents.models import build_chat_model_with_fallback
 from app.core.logging import get_logger
-from .schemas import InsuranceAgentState
+from app.agents.schemas import InsuranceAgentState
+from app.core.config import settings
 
 logger = get_logger(__name__)
 
+#1.定义State
+class ChitchatState(InsuranceAgentState):
+    chitchat_count: int #记录闲聊次数
+
 SYSTEM_MESSAGE = """
-你是《安心保》商城的智能客服，负责处理与保险业务无关的普通聊天。
+你是保险智能客服，负责处理与保险业务无关的普通聊天。
 
 要求：
 1. 回复友好、自然，最多两句话。
@@ -20,63 +23,51 @@ SYSTEM_MESSAGE = """
 5. 超出能力范围时，如实说明无法提供。
 """.strip()
 
-
-# 1.定义State
-class ChitchatState(InsuranceAgentState):
-    chitchat_count: int     # 统计闲聊次数
-
-# 2.定义Workflow
-
-MAX_COUNT = 2   # 最大闲聊轮次
-
-class ChitChatWorkflow:
-
+MAX_CHITCHAT_COUNT = 3 #最大闲聊次数
+#2.定义工作流
+class ChitchatWorkflow:
     def __init__(self):
-        self.model = init_chat_model(
-            "deepseek-v4-flash",
-            api_key=settings.llm.api_key,
-            extra_body = {"thinking": {"type": "disabled"}}
-        )
-
+        # 主模型失败自动切备用（见 app/agents/models.py）
+        self.model = build_chat_model_with_fallback()
 
     def chitchat(self, state: ChitchatState):
-
-        # 取出State中的闲聊次数
+        """闲聊工作流"""
+        #获取闲聊次数
         count = state.get("chitchat_count", 0)
 
-        # 取出上一轮次的工作流，如果上一轮次不是闲聊，则重置count
-        if state.get("previous_workflow") != 'chitchat':
+        #取出上一轮的工作流，如果上一轮不是闲聊工作流，则重置闲聊次数
+        if state.get("previous_workflow") != "chitchat":
             count = 0
 
-        # 判断count是否超出了闲聊的最大轮次
-        if count >= MAX_COUNT:
-            logger.info("闲聊次数超过最大值，直接返回固定结果。")
+        #判断是否超过闲聊次数限制
+        if count >= MAX_CHITCHAT_COUNT:
+            #超过闲聊次数限制，返回提示信息
+            logger.info("闲聊次数已达上限")
             return {"messages": [AIMessage("我主要协助处理保险产品、投保和理赔咨询，请告诉我想办理或了解的事项。")]}
 
-        logger.info(f"当前闲聊次：{count}")
-        # 没超过闲聊最大轮次，可以正常对话
-        response = self.model.invoke([SystemMessage(SYSTEM_MESSAGE)] + state['messages'])
+        #没超过闲聊次数限制，继续闲聊
+        response = self.model.invoke([
+            SystemMessage(SYSTEM_MESSAGE),
+            *state['messages']
+        ])
 
-        # 返回结果，更新Message、更新count
+        #返回结果，更新Messages，更新闲聊次数
         return {
             "messages": [response],
-            "chitchat_count": count + 1
+            "chitchat_count": count+1
         }
 
     def build_chitchat_graph(self):
-
-        # 创建Builder
+        """构建闲聊工作流Graph"""
+        #创建builder
         builder = StateGraph(ChitchatState)
-
-        # 添加节点
+        #添加节点
         builder.add_node("chitchat", self.chitchat)
-
-        # 添加边
-        builder.set_entry_point("chitchat")     # START -> chitchat
-        builder.set_finish_point("chitchat")    # chitchat -> END
-
-        # 编译
+        #添加边
+        builder.set_entry_point("chitchat") #START->chitchat
+        builder.set_finish_point("chitchat") #chitchat->END
+        #编译
         return builder.compile(checkpointer=True)
 
 def init_chitchat_agent():
-    return ChitChatWorkflow().build_chitchat_graph()
+    return ChitchatWorkflow().build_chitchat_graph()

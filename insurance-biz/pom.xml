@@ -108,7 +108,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
-
+        <!-- MyBatis-Plus 3.5.9 起，分页用的 PaginationInnerInterceptor 依赖 JSQLParser，
+     这部分被拆成独立模块，必须显式引入，否则编译期就找不到类 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <version>3.5.9</version>
+        </dependency>
     </dependencies>
 
     <build>

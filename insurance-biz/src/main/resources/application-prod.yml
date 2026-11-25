@@ -1,0 +1,5 @@
+# 容器环境：配置全部来自环境变量（compose 的 env_file + environment），不读 .env
+mybatis-plus:
+  configuration:
+    # 生产不打 SQL：一条条打印既拖慢接口，也会把日志刷爆
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl

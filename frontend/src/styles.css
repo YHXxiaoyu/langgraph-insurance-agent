@@ -228,6 +228,13 @@ a {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* 分页器：居中，与上方网格留出间距 */
+.products-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+}
+
 .product-card,
 .product-skeleton {
   background: #fff;

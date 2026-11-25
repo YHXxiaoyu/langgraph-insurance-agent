@@ -25,14 +25,26 @@ class ParentChunkRetriever:
     def __init__(self, vector_store: Milvus):
         self._vector_store = vector_store
 
-    async def retrieve(self, query: str, k: int, product_id: int):
+    async def retrieve(
+        self,
+        query: str,
+        k: int,
+        product_id: int,
+        fetch_k: int = 10,
+        use_rerank: bool = True,
+    ):
+        """在指定产品内混合检索并重排。
+
+        fetch_k / use_rerank 是给离线评测（scripts/eval_retrieval.py）做对照实验用的，
+        线上调用保持默认值即可。
+        """
         # 1.混合检索，召回子块 list[Document]
         child_chunks = await self._vector_store.asimilarity_search(
             query,
             k=k,  # 返回得分最高的K条
-            fetch_k=10,  # 初筛时返回的文档的数量
+            fetch_k=fetch_k,  # 初筛时返回的文档的数量
             expr=f"product_id == {product_id}",
-            reranker=create_cross_encoder_ranker(query)
+            reranker=create_cross_encoder_ranker(query) if use_rerank else None,
         )
 
         # 2.从子块中拿到parent_id，并且去重

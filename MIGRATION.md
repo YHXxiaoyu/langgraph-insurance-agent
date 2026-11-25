@@ -464,42 +464,106 @@ Java 删 `chat_threads` 记录后，Python 侧要清掉对应 thread 的 checkpo
 
 ## 优化清单（改造完成后再动）
 
-### 🥇 第一梯队 —— 性价比最高，必做
+> **2026-11-24 收敛**：不再追求清单全绿，只保留"能讲出因果、体现工程能力、有独特卖点"的项。
+> 核心 5 项约 4 人天，可选 3 项约 3 人天；其余标「暂不做」并写明理由——比删掉好，以后想起来了知道当时为什么不选。
 
-- [ ] **单元测试 + 集成测试**
-  - Java：JUnit 5 + Testcontainers
-  - Python：pytest
-  - 当前项目**零测试**，这是最明显的短板
-- [ ] **RAG 评测集**
-  - 造 50–100 条「问题 → 应命中的条款」样本
-  - 计算 recall@k、MRR，对比不同切分策略
-  - **技术含量最高，最值得讲**
-- [ ] **Docker 化**
-  - 两个服务各写 Dockerfile
-  - 合并成一份完整的 `docker-compose.yml`，一键起全栈
-- [ ] **统一 traceId**
-  - Java 生成，通过 header 传给 Python，两边日志都打
-  - 排查跨服务问题全靠它
+### ✅ 已完成
 
-### 🥈 第二梯队 —— 锦上添花
+- [x] **单元测试（Java 部分）**
+  - `JwtToolTest`、`TraceIdFilterTest`、`ChatThreadServiceImplTest`，共 14 个用例
+- [x] **RAG 评测集**（2026-11-23 完成 baseline）
+  - 60 条「问题 → 应命中的章节路径」样本（12 产品 × 5，反向生成 + 人工校验）
+  - `scripts/eval_retrieval.py` 算 recall@k / MRR，报告落 `evals/reports/`
+  - baseline（k=5，fetch_k=10，rerank on）：recall@1 **0.700**，recall@3 0.883，recall@5 **0.983**，MRR **0.809**
+  - 对照：关 rerank → recall@1 0.567 / MRR 0.709（**rerank 明显有效**）；fetch_k=20 → 0.683 / 0.787（无收益）
+  - 详见 `agent-service/evals/README.md`
+- [x] **Docker 化**（2026-11-23 完成）
+  - `insurance-biz/Dockerfile`：Maven 多阶段构建 → `eclipse-temurin:21-jre`，镜像 387MB
+  - `agent-service/Dockerfile`：python:3.14-slim + uv，镜像 919MB
+  - `frontend/Dockerfile`：Vite 构建 → Nginx，Nginx 模板注入后端地址
+  - `deploy/docker-compose.yml` 已合并 backend / agent / frontend，一键起全栈
+  - Spring Profile 拆分：`local`（读 `.env`、打印 SQL）/ `prod`（纯环境变量、关闭 SQL 日志）
+  - 验收通过：`/api/v1/products` 200、SSE 对话返回寒暄 + 历史落库、`/healthy` 200
+- [x] **引用信息打通（citations）**（2026-11-23）
+  - 工具检索时登记来源（`S1`、`S2`…），推流发 `event: additional_info`，流结束后写回 checkpoint 里那条 AI 消息
+  - 历史接口从 `additional_kwargs.additional_info` 回放，刷新后引用仍在
+  - 两个坑：`fastapi.sse` 的 `data` 永远 JSON 序列化 → 必须传 dict；推荐分支流事件里拿不到完整 `AIMessage` → 改为流结束后回读 checkpoint
+- [x] **产品分页 + 险种筛选**（2026-11-24）
+  - `GET /api/v1/products?category=&page=&pageSize=`，返回 `{items, page, page_size, total, pages}`
+  - `MybatisPlusConfig` 注册分页拦截器（3.5.9 起需额外引 `mybatis-plus-jsqlparser`，否则编译期找不到 `PaginationInnerInterceptor`）
+  - 前端每页 6 条（网格 3 列 × 2 行），切险种自动回第 1 页
+- [x] **全量部署复验（2026-11-25）**
+  - 三个镜像在 VM 上串行重构建（2 核 3.7G，不要并行），`docker compose up -d backend agent frontend`
+  - 浏览器实测：首页「共 12 款产品」+ 2 页翻页 + 切「医疗险」只剩 3 款；注册/登录；
+    闲聊回复；方案确认卡片（回放挂起的 interrupt）→ 点「确认保存方案」→「方案已确认」；
+    引用来源 `[1]`、`[2]` 正常渲染；删过的会话再点开提示「会话不存在（错误编号 …）」
+  - 注意：Lightpanda 无头浏览器读不了超过 ~20 秒的长 SSE 流（报 `Failed to read response body`），
+    同一请求用 curl 走 Nginx 正常（11.5 秒、301 条 message + interrupt），长轮次对话请在真实浏览器里点
 
-- [ ] **混合路由**
-  - 现状：纯 LLM 分类意图，每轮都多一次模型调用
-  - 改进：规则快速通道（闲聊/理赔关键词）+ LLM 兜底
-  - 收益：省钱、降延迟，且是真实生产做法
-- [ ] **模型降级链**
-  - 主模型超时 → 备用模型 → 转人工
-- [ ] **Token 成本统计**
-  - 每次调用记录 token 数，按会话/用户聚合
-- [ ] **Query 改写**
-  - 多轮对话中「那它呢」这类指代，先改写成完整问题再检索
+### 🎯 核心（保留，约 4 人天）
 
-### 🥉 第三梯队 —— 有余力再说
+- [x] **Python pytest 基础**（2026-11-24 完成）
+  - `tests/test_java_client.py`：R<T> 外壳拆分、业务码失败、非 2xx、网络错误、trace 头透传（5 例）
+  - `tests/test_chat_service.py`：历史过滤、interrupt 回放、流事件映射、引用推送与写回、`Command(resume)`、无 checkpointer 删除（8 例）
+  - `asyncio_mode=auto`，用假 Agent 替代 LangGraph，不连库、不调模型；`uv run pytest -q` 共 13 例
+- [x] **统一 traceId 收尾**（2026-11-25 完成，本地链路验收通过；部署环境待复验）
+  - Java `TraceIdFilter` 生成 16 位 traceId → MDC + 响应头 `X-Trace-Id` → 下游 `AgentClient` 透传给 Python
+  - Python 侧 `TraceIdMiddleware` 从同名头取值，绑定到 structlog 上下文，日志里同一条链路可 `grep` 关联
+  - 前端收尾：`ApiError` 带 `traceId`，`errorText()` 统一拼成「XXX（错误编号 a1b2c3d4e5f6）」，
+    聊天 SSE 的 `event:error` 也走同一套
+  - 验收：Java 401 响应头有 `X-Trace-Id`；经 Vite 代理后头依然透传（`x-trace-id: cfc316e7ef2c4fed`）；
+    `tsc --noEmit` 通过
+  - VM 实测（2026-11-25）：浏览器里删过的会话再点开，页面提示「会话不存在（错误编号 f9abc668275e45ac）」，
+    `docker logs hm-backend | grep f9abc668275e45ac` 命中同一条业务异常日志；
+    带 `X-Trace-Id: tracee2e0002abcd` 发起对话，`hm-agent` 的「条款检索」日志同一串 traceId，跨进程闭环成立
+- [x] **保险方案人工确认（interrupt）**（2026-11-24 完成，API 层验收通过）
+  - 主图新增 `prepare_plan`（整理方案写入 state）→ `confirm_plan`（`interrupt` 暂停）两个节点
+  - `pending_plan` 必须放 state 而不是 ContextVar：内中断恢复时节点会重跑，ContextVar 已是空的
+  - SSE 推 `event: interrupt`；带 `decision` 的请求走 `Command(resume=decision)`；历史接口回放 `interrupt`（刷新能恢复卡片）
+  - Java：`ChatRequestDTO` 加 `decision`、`message` 改为可选；`AgentClient` 透传；控制器校验二者至少有一个
+  - 验收：直接调 Python 与经 Java 两条链路都通过（approve / reject 两条分支、未确认时历史返回 interrupt、确认后为 null）
+  - 待办：浏览器端点击验证（需起前端）
+- [x] **模型降级链**（2026-11-25 完成，三步验收通过）
+  - `agents/models.py` 统一出口：主模型 DeepSeek（`timeout` + `max_retries=0`）→ 备用 DashScope `qwen-plus` → 转人工
+  - 普通节点用 `with_fallbacks`；`create_agent` 子图只认 `BaseChatModel`，改用 `FallbackModelMiddleware`
+    在 `wrap_model_call` / `awrap_model_call` 里 `request.override(model=...)` 重试
+  - 意图识别自己 try/except 切换，不用 `with_fallbacks`（见下方坑 ①）
+  - 验收（用无效 key 模拟真实故障，比换模型名更贴近线上）：
+    1. 正常：DeepSeek 200，日志无降级告警
+    2. 主模型故障：DeepSeek 401 → 自动切 qwen 200，回答由 qwen 产出
+    3. 主备都故障：两个 401 → 意图识别兜底 `human_handoff`，前端收到转人工提示、连接不挂死
+  - 踩到的坑 ①：结构化输出（`with_structured_output`）的 AIMessage 会以顶层 `messages` 事件混进流里，
+    降级重试时前端气泡会直接冒出 `{"intent": "recommendation_plan"...}`；
+    修法是在 `ChatService` 里跳过 `additional_kwargs["parsed"]` 非空的消息
+  - 踩到的坑 ②：`IntentRouter.route()` 漏 `return result`，LLM 分支必崩（`None.intent`），
+    之前只测寒暄正则分支才没暴露
+- [x] **Query 改写 + 评测验证**（2026-11-24 完成）
+  - 先测后做：造 12 组多轮样本（`evals/rag_eval_multiturn.jsonl`，上文 + 半句追问）
+  - 追问原话直接检索：recall@1 **0.167** / recall@5 **0.333** / MRR 0.215
+  - 上文+追问拼接（近似改写）：recall@1 0.583 / recall@5 **0.833** / MRR 0.656
+  - 线上实测发现真正卡住的不是检索器，而是工具调用：模型传 `product_id=0`、query 只有半句
+  - 修法（不加改写模型）：系统提示词要求"先查候选产品拿 id、多轮把追问补全成完整问题"；
+    工具对 `product_id <= 0` 直接返回提示，让模型自查
+  - 复测：两轮对话的 query 变成「…重疾险的等待期是多久」「…犹豫期内退保和犹豫期后退保能退还多少保费」，
+    `product_id=3`，引用分别带出 2 条 / 4 条
 
-- [ ] 接口限流（Sentinel / Bucket4j）
-- [ ] 链路追踪（Micrometer + OpenTelemetry 接入）
-- [ ] 相邻父块扩展（contextual retrieval）
-- [ ] 人工客服真正的工作台（当前 `human_handoff_node` 是占位节点）
+### 🌟 可选（有余力再做，约 3 人天）
+
+- [ ] **理赔咨询做实**（1 天）：`claims_node` 目前是固定文案，改成按「报案 / 材料 / 进度」分类 + 条款检索
+- [ ] **保单只读列表**（1 天）：`policies` 表已有，只做列表 + 详情，不做下单流程
+- [ ] **混合路由**（1 天）：规则快速通道（闲聊/理赔关键词）+ LLM 兜底，省一次模型调用
+
+### 🚫 暂不做（附理由）
+
+| 项 | 理由 |
+|---|---|
+| Testcontainers 集成测试 | 已有单元测试 + 人工验收，2 天换"更完整的测试"，边际收益低 |
+| Token 成本统计 | 有评测集后讲不出新东西 |
+| 接口限流 | 一个注解的事，单独讲像凑数 |
+| OpenTelemetry | traceId 已覆盖核心诉求；本地也没有 Jaeger 可展示 |
+| 相邻父块扩展 | 属于检索调优，用评测集试一次就知道，不值得单独立项 |
+| 人工客服工作台 | 5~15 天，本质是另一个 IM 系统；`human_handoff_node` 作为"能力边界"演示已足够 |
+| 订单 / 理赔全流程 | 2~4 天，会把项目重心从 AI 拉回传统 CRUD |
 
 ---
 
@@ -510,6 +574,7 @@ Java 删 `chat_threads` 记录后，Python 侧要清掉对应 thread 的 checkpo
 第 2 周：阶段 3 + 4   → Java 侧独立可用
 第 3 周：阶段 5 + 6   → 端到端跑通
 第 4 周起：第一梯队优化
+2026-11-24 起：按「核心 5 项（约 4 人天）」收尾，其余项见「暂不做」
 ```
 
 **纪律：每个阶段结束必须有可演示的成果。**

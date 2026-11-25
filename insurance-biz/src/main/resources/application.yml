@@ -2,12 +2,12 @@ server:
   port: 8080
 
 spring:
-  config:
-    # 启动时把项目根目录的 .env 当成 properties 文件读进来
-    import: optional:file:.env[.properties]
-      # SSE 是长连接，超过默认的异步超时会被容器掐断
+  profiles:
+    # 本地开发默认 local；容器里由 compose 注入 SPRING_PROFILES_ACTIVE=prod
+    active: ${SPRING_PROFILES_ACTIVE:local}
   mvc:
     async:
+      # SSE 是长连接，超过默认的异步超时会被容器掐断
       request-timeout: 300000      # 单位毫秒，5 分钟
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -23,7 +23,6 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     # 让 @EnumValue 生效：UserStatus 这类枚举与数据库里的字符串互转
     default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     db-config:
       id-type: auto
@@ -31,8 +30,8 @@ mybatis-plus:
 jwt:
   # 必须由环境变量或 .env 提供，缺失则启动失败
   secret: ${JWT_SECRET}
-  # token 有效期，单位分钟
   expire-minutes: ${JWT_EXPIRE_MINUTES:1440}
+
 internal:
   # Python 侧回调内部接口时校验的令牌，缺失则启动失败
   token: ${INTERNAL_TOKEN}
@@ -55,4 +54,7 @@ agent:
   response-timeout: ${AGENT_RESPONSE_TIMEOUT:120s}
   # 连不上要尽快失败，别让前端干等
   connect-timeout: ${AGENT_CONNECT_TIMEOUT:5s}
-
+logging:
+  pattern:
+    # 关键是把 %X{traceId} 加进去，没有 traceId 时显示为空
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{traceId:-}] %-40.40logger{39} : %msg%n"

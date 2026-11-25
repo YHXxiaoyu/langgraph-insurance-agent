@@ -14,10 +14,27 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** 后端链路 ID，用户报错时把这串发过来就能 grep 到整条日志 */
+    readonly traceId?: string,
   ) {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** 从响应头取后端链路 ID；Java 的 TraceIdFilter 在每个响应上都写了这个头 */
+function traceIdOf(response: Response): string | undefined {
+  return response.headers.get('x-trace-id') ?? undefined;
+}
+
+/**
+ * 把任意异常转成展示给用户的一句话。
+ * 有 traceId 就附在后面——用户截图发过来，运维直接按这串查日志。
+ */
+export function errorText(reason: unknown, fallback: string): string {
+  const message = reason instanceof Error ? reason.message : fallback;
+  const traceId = reason instanceof ApiError ? reason.traceId : undefined;
+  return traceId ? `${message}（错误编号 ${traceId}）` : message;
 }
 
 type RawBody = Record<string, unknown> | null;
@@ -49,7 +66,7 @@ async function unwrap<T>(response: Response): Promise<T> {
         : typeof body?.message === 'string'
           ? body.message
           : '请求失败，请稍后重试';
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, traceIdOf(response));
   }
   if (response.status === 204 || body === null) {
     return undefined as T;
@@ -60,6 +77,7 @@ async function unwrap<T>(response: Response): Promise<T> {
       throw new ApiError(
         typeof body.msg === 'string' ? body.msg : '请求失败，请稍后重试',
         body.code,
+        traceIdOf(response),
       );
     }
     return body.data as T;
@@ -101,16 +119,28 @@ export async function login(username: string, password: string): Promise<LoginRe
   return unwrap<LoginResult>(response);
 }
 
+/** 产品分页结果，字段名与 Java 侧 ProductPageVO 的 snake_case 对齐 */
+export interface ProductPage {
+  items: Product[];
+  page: number;
+  page_size: number;
+  total: number;
+  pages: number;
+}
+
 export function listProducts(
   category: InsuranceCategory | 'all',
+  page: number,
+  pageSize: number,
   signal?: AbortSignal,
-): Promise<Product[]> {
+): Promise<ProductPage> {
   const params = new URLSearchParams();
   if (category !== 'all') {
     params.set('category', category);
   }
-  const query = params.toString();
-  return publicRequest<Product[]>(`/products${query ? `?${query}` : ''}`, { signal });
+  params.set('page', String(page));
+  params.set('pageSize', String(pageSize));
+  return publicRequest<ProductPage>(`/products?${params.toString()}`, { signal });
 }
 
 export function markPlanItemInsured(planId: string, itemId: string): Promise<unknown> {
@@ -171,6 +201,7 @@ export async function streamChat(
     // Java 的 ChatRequestDTO 用 @JsonProperty("thread_id") 接这个字段
     body: JSON.stringify({ thread_id: threadId, ...input }),
   });
+  const traceId = traceIdOf(response);
   if (!response.ok || !response.body) {
     const error = (await response.json().catch(() => null)) as RawBody;
     const message =
@@ -179,8 +210,17 @@ export async function streamChat(
         : typeof error?.message === 'string'
           ? error.message
           : '消息发送失败，请稍后重试';
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, traceId);
   }
+
+  // SSE 里的 event:error（Python 侧模型全挂）同样要带上 traceId，
+  // 否则用户只能看到"模型服务暂时不可用"，没法定位到具体是哪次请求
+  const sseHandlers = traceId
+    ? {
+        ...handlers,
+        onError: (message: string) => handlers.onError?.(`${message}（错误编号 ${traceId}）`),
+      }
+    : handlers;
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -191,10 +231,10 @@ export async function streamChat(
     buffer += decoder.decode(value, { stream: true });
     const parts = buffer.split(/\r?\n\r?\n/);
     buffer = parts.pop() ?? '';
-    parts.forEach((eventText) => handleSseEvent(eventText, handlers));
+    parts.forEach((eventText) => handleSseEvent(eventText, sseHandlers));
   }
   if (buffer.trim()) {
-    handleSseEvent(buffer, handlers);
+    handleSseEvent(buffer, sseHandlers);
   }
 }
 

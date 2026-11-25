@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.insurance.biz.common.exception.CommonException;
 import com.insurance.biz.config.AgentProperties;
 import com.insurance.biz.config.InternalProperties;
+import com.insurance.biz.config.TraceIdFilter;
 import com.insurance.biz.domain.vo.ChatHistoryVO;
 import com.insurance.biz.security.InternalTokenFilter;
 import io.netty.channel.ChannelOption;
@@ -18,13 +19,15 @@ import reactor.core.publisher.Flux;
 import reactor.netty.http.client.HttpClient;
 
 import java.time.Duration;
+import java.util.Map;
 
 /**
  * Python Agent 服务的客户端。
  * <p>
  * 三类调用：流式对话（SSE 透传）、读历史（同步，要立刻回给浏览器）、
  * 删会话（异步，清 checkpoint 失败也不该影响用户）。
- * 鉴权一律用服务间的 X-Internal-Token，Python 不信用户 JWT。
+ * 鉴权一律用服务间的 X-Internal-Token，Python 不信用户 JWT；
+ * 链路追踪一律带 X-Trace-Id，沿用 Java 入口生成的那个。
  */
 @Slf4j
 @Component
@@ -66,13 +69,15 @@ public class AgentClient {
      * 流式对话。返回的 Flux 是懒的 —— 不订阅就不会真正发请求，
      * 所以调用方要保证自己处在能处理异常的位置。
      */
-    public Flux<ServerSentEvent<String>> streamChat(String threadId, Long userId, String message) {
+    public Flux<ServerSentEvent<String>> streamChat(String threadId, Long userId, String message, Map<String, Object> decision) {
         return webClient.post()
                 .uri("/internal/v1/agent/chat")
                 .header(InternalTokenFilter.HEADER, internalToken)
+                // 在请求线程里取值：header 是同步构建的，进 Reactor 线程前就固定下来了
+                .header(TraceIdFilter.HEADER, traceId())
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_EVENT_STREAM)
-                .bodyValue(new AgentChatRequest(userId, threadId, message))
+                .bodyValue(new AgentChatRequest(userId, threadId, message, decision))
                 .retrieve()
                 .bodyToFlux(SSE_TYPE)
                 .onErrorResume(ex -> {
@@ -94,6 +99,7 @@ public class AgentClient {
             return webClient.get()
                     .uri("/internal/v1/agent/threads/{id}/messages", threadId)
                     .header(InternalTokenFilter.HEADER, internalToken)
+                    .header(TraceIdFilter.HEADER, traceId())
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
                     .bodyToMono(ChatHistoryVO.class)
@@ -112,13 +118,27 @@ public class AgentClient {
      * 失败只记日志 —— 留一点脏数据，好过让用户点了删除还在转圈。
      */
     public void deleteThread(String threadId) {
+        // 在提交订阅之前把 traceId 取出来：subscribe() 之后就在别的线程上了，MDC 不跟过去
+        String traceId = traceId();
         webClient.delete()
                 .uri("/internal/v1/agent/threads/{id}", threadId)
                 .header(InternalTokenFilter.HEADER, internalToken)
+                .header(TraceIdFilter.HEADER, traceId)
                 .retrieve()
                 .toBodilessEntity()
                 .doOnError(ex -> log.warn("清理 Agent 会话 checkpoint 失败, threadId={}", threadId, ex))
                 .subscribe();
+    }
+
+    /**
+     * 取当前请求的 traceId。
+     * <p>
+     * MDC 是线程绑定的，异步链路（比如从别的线程触发的删除）取不到，
+     * 这时生成一个新的 —— 宁可断链，也不能让下游日志里冒出个空值。
+     */
+    private static String traceId() {
+        String traceId = TraceIdFilter.currentTraceId();
+        return traceId != null ? traceId : TraceIdFilter.newTraceId();
     }
 
     /**
@@ -129,6 +149,7 @@ public class AgentClient {
     private record AgentChatRequest(
             @JsonProperty("user_id") Long userId,
             @JsonProperty("thread_id") String threadId,
-            String message) {
+            String message,
+            Map<String, Object> decision) {
     }
 }

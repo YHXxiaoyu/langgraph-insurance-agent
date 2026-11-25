@@ -37,7 +37,8 @@ def verify_internal_token(
 async def internal_chat(request: InternalChatRequest, http_request: Request):
     # 只跑 Agent：归属校验由 Java 完成，Python 不查业务库
     service = ChatService(http_request.app.state.agent)
-    async for sse in service.internal_chat_stream(request.thread_id, request.message):
+    async for sse in service.internal_chat_stream(
+            request.thread_id, request.message, request.decision):
         yield sse
 
 

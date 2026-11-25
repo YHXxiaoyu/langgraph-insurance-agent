@@ -6,6 +6,7 @@ import com.insurance.biz.mapper.UserMapper;
 import com.insurance.biz.security.InternalTokenFilter;
 import com.insurance.biz.security.JwtAuthenticationFilter;
 import com.insurance.biz.security.LoginUser;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -59,6 +60,11 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // SSE 结束后容器会做一次 ASYNC 分派，Spring Security 6 默认会对它
+                        // 再走一遍鉴权。但 JWT 过滤器是 OncePerRequestFilter，异步分派时不执行，
+                        // SecurityContext 是空的，于是被判定为拒绝，把已经发完的响应强行中断
+                        // （前端表现为 network error）。原始请求已经鉴过权，这里直接放行。
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login").permitAll()
                         // 产品目录是公开信息：首页未登录也要能浏览，
                         // 只有下单、咨询、会话这些才需要登录

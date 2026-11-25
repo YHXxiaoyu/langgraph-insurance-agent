@@ -10,7 +10,7 @@ import {
 import { Alert, Button, Steps } from 'antd';
 import { useState } from 'react';
 
-import { ApiError, markPlanItemInsured } from './api';
+import { ApiError, errorText, markPlanItemInsured } from './api';
 import type { AuthSession } from './types';
 
 interface ApplicationPageProps {
@@ -49,7 +49,7 @@ export function ApplicationPage({ session, onBack, onSessionExpired }: Applicati
         onSessionExpired();
         return;
       }
-      setError(reason instanceof Error ? reason.message : '支付失败，请稍后重试');
+      setError(errorText(reason, '支付失败，请稍后重试'));
     } finally {
       setPaying(false);
     }

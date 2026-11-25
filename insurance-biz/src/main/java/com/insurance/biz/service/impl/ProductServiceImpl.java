@@ -1,14 +1,18 @@
 package com.insurance.biz.service.impl;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.insurance.biz.common.exception.NotFoundException;
 import com.insurance.biz.domain.dto.ProductCandidateQueryDTO;
 import com.insurance.biz.domain.po.Product;
+import com.insurance.biz.domain.vo.ProductPageVO;
 import com.insurance.biz.domain.vo.ProductVO;
 import com.insurance.biz.mapper.ProductMapper;
 import com.insurance.biz.service.IProductService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -18,8 +22,11 @@ import java.util.List;
 public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product>
         implements IProductService {
 
-    /** products.status 的取值，暂时不做成枚举（代码里只有这一处判断） */
+    /** products.status 的取值 */
     private static final String STATUS_ON_SALE = "active";
+
+    /** 单页上限：防止前端传 999999 把整张表拉出来 */
+    private static final long MAX_PAGE_SIZE = 50;
 
     @Override
     public List<ProductVO> listOnSale() {
@@ -31,12 +38,29 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product>
         return products.stream().map(this::toVO).toList();
     }
 
-    /** po → vo：只拷前端需要的字段，同名字段直接复制 */
-    private ProductVO toVO(Product product) {
-        ProductVO vo = new ProductVO();
-        BeanUtils.copyProperties(product, vo);
-        return vo;
+    @Override
+    public ProductPageVO pageOnSale(String category, long page, long pageSize) {
+        // 参数兜底：非法值在这里收敛，不依赖调用方
+        long current = Math.max(page, 1);
+        long size = Math.min(Math.max(pageSize, 1), MAX_PAGE_SIZE);
+
+        Page<Product> result = page(
+                new Page<>(current, size),
+                Wrappers.<Product>lambdaQuery()
+                        .eq(Product::getStatus, STATUS_ON_SALE)
+                        // 第一个参数是开关：category 为空时不加这个条件
+                        .eq(StringUtils.hasText(category), Product::getCategory, category)
+                        .orderByDesc(Product::getId));
+
+        List<ProductVO> items = result.getRecords().stream().map(this::toVO).toList();
+        return new ProductPageVO(
+                items,
+                result.getCurrent(),
+                result.getSize(),
+                result.getTotal(),
+                result.getPages());
     }
+
     @Override
     public List<ProductVO> listCandidates(ProductCandidateQueryDTO query) {
         int limit = query.limitOrDefault();
@@ -68,5 +92,10 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product>
         return toVO(product);
     }
 
-
+    /** po → vo：只拷前端需要的字段，同名字段直接复制 */
+    private ProductVO toVO(Product product) {
+        ProductVO vo = new ProductVO();
+        BeanUtils.copyProperties(product, vo);
+        return vo;
+    }
 }

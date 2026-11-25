@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Literal
 
 from langgraph.graph import MessagesState
@@ -25,3 +26,6 @@ class InsuranceAgentState(MessagesState):
 
     previous_workflow: Intent
     active_workflow: Intent
+    # 待确认的方案。放在 state 里而不是 ContextVar：
+    # interrupt 恢复时节点会从头重跑，ContextVar 那时已经是空的
+    pending_plan: dict | None

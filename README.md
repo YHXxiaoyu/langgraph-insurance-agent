@@ -5,7 +5,8 @@
 - **Java（Spring Boot）** 负责业务：认证鉴权、产品查询、会话管理、事务
 - **Python（FastAPI + LangGraph）** 只负责 Agent：意图路由、RAG 检索、大模型调用
 
-> 改造计划与逐日进度见 [MIGRATION.md](MIGRATION.md)。当前处于改造中期，两套服务并存。
+> 改造计划与逐日进度见 [MIGRATION.md](MIGRATION.md)。双栈改造已完成，当前处于优化阶段
+> （可信引用、方案人工确认、模型降级链、RAG 离线评测）。
 
 ## 为什么拆成两个服务
 
@@ -21,6 +22,9 @@
 - **父子块 RAG**：PDF 条款经 MinerU 解析 → 大模型矫正 Markdown → 按标题层级切父块、再递归切子块；检索命中子块后回表还原父块，保证送入模型的上下文完整
 - **混合检索 + 重排**：Milvus 内置 BM25 稀疏向量与 DashScope `text-embedding-v4` 稠密向量双路召回，`gte-rerank-v2` 重排
 - **流式输出**：SSE 逐字推送模型输出
+- **可信引用**：检索结果编号 `S1/S2`…，回答末尾用 `[1][2]` 标注来源；引用随消息写入 checkpoint，刷新不丢
+- **方案人工确认**：推荐完成后 `interrupt` 暂停图，前端弹方案卡，用户点「确认」才继续，不确认不落地
+- **模型降级链**：主模型（DeepSeek）超时/报错自动切备用（DashScope qwen），两者都不可用则转人工
 
 **业务侧（Java）**
 
@@ -74,9 +78,11 @@
 └──────────────┘            └──────────────┘  └──────────────┘
 ```
 
-> 当前阶段：阶段 6 已完成 —— 前端只认 Java 的 8080，登录拿 JWT，
+> 当前阶段：阶段 6 联调完成 + 优化阶段收尾 —— 前端只认 Java 的 8080，登录拿 JWT，
 > 会话、历史、SSE 对话全部经 Java 中转；Java 通过 `X-Internal-Token` 调用 Python 的
-> 内部接口，删除会话时顺带清理 Python 侧 checkpoint。详见 MIGRATION.md。
+> 内部接口，删除会话时顺带清理 Python 侧 checkpoint。
+> 全链路带 `X-Trace-Id`，用户报错时页面给出的「错误编号」可直接在服务端日志里 grep 到。
+> 详见 MIGRATION.md 与 [优化阶段笔记](insurance-biz/docs/stage-7-optimization-notes.md)。
 
 ## 目录结构
 
@@ -239,6 +245,7 @@ uv run python scripts/ingest_rag.py
 | 4 | AgentClient + SSE 透传 | ✅ |
 | 5 | Python 瘦身（删除业务模块，改调内部接口） | ✅ |
 | 6 | 端到端联调（前端切 Java + JWT） | ✅ |
+| 优化 | 单测 / traceId / 引用来源 / 方案确认 / 降级链 / RAG 评测 | ✅ |
 
 ## 说明
 

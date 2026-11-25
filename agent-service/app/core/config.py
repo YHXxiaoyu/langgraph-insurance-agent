@@ -31,8 +31,8 @@ class DatabaseSettings(EnvSettings):
     echo: bool = Field(alias="DB_ECHO", default=False)
     pool_size: int = Field(alias="DB_POOL_SIZE", default=5)
     max_overflow: int = Field(alias="DB_MAX_OVERFLOW", default=10)
-    pool_timeout: int = Field(alias="DB_POOL_TIMEOUT", default=30)
     pool_recycle: int = Field(alias="DB_POOL_RECYCLE", default=1800)
+    pool_timeout: int = Field(alias="DB_POOL_TIMEOUT", default=30)
 
     def build_url(self, scheme: str):
         # 自动拼接URL路径
@@ -60,16 +60,33 @@ class LLMSettings(EnvSettings):
     """模型相关配置"""
     api_key: str = Field(alias="DEEPSEEK_API_KEY")
     chat_model: str = Field(alias="CHAT_MODEL", default="deepseek-v4-flash")
-    dashscope_api_key: str = Field(alias="DASHSCOPE_API_KEY")
-    dashscope_base_url: str = Field(alias="DASHSCOPE_BASE_URL")
+
+    # ---- 模型降级链 ----
+    timeout: float = Field(
+        alias="LLM_TIMEOUT", default=30.0,
+        description="单次模型调用超时（秒），超了直接切备用模型",
+    )
+    fallback_model: str = Field(
+        alias="FALLBACK_MODEL", default="qwen-plus",
+        description="备用模型名（DashScope 的 qwen 系列）",
+    )
+    fallback_api_key: str = Field(
+        alias="DASHSCOPE_API_KEY", default="",
+        description="备用模型密钥；留空则不做降级",
+    )
+    fallback_base_url: str = Field(
+        alias="DASHSCOPE_BASE_URL",
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
 
 class LoggingSettings(EnvSettings):
     """日志相关配置"""
     level: str = Field(alias="LOGGING_LEVEL", default="INFO") # 可选值：DEBUG、INFO、WARNING、ERROR、CRITICAL
 
+
 class RAGSettings(EnvSettings):
     """RAG相关配置"""
-    mineru_token: str = Field(alias="MINERU_TOKEN")
+    mineru_token: str = Field(alias="MINERU_TOKEN", default="")
     milvus_host: str = Field(alias="MILVUS_HOST", default="127.0.0.1")
     milvus_port: int = Field(alias="MILVUS_PORT", default=19530)
 
@@ -91,12 +108,14 @@ class JavaSettings(EnvSettings):
         description="调用 Java 内部接口的超时时间（秒）",
     )
 
+
 class SecuritySettings(EnvSettings):
     """服务间调用鉴权"""
     internal_token: str = Field(
         alias="INTERNAL_TOKEN",
         description="Java 调本服务内部接口时校验的共享令牌，必须与 Java 侧一致",
     )
+
 
 class Settings(BaseSettings):
     app: AppSettings = Field(default_factory=AppSettings)

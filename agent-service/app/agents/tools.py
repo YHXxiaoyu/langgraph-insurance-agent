@@ -1,10 +1,12 @@
+import json
 from decimal import Decimal
 
 from langchain.tools import tool
 
+from app.agents.citations import record as record_citations
+from app.agents.plan import record as record_products
 from app.core.logging import get_logger
 from app.infra.java_client import JavaServiceError, call_java
-from app.rag.models import ParentChunk
 
 logger = get_logger(__name__)
 
@@ -15,54 +17,78 @@ async def query_candidate_products(
     premium_min: Decimal | None = None,
     limit_per_category: int = 5
 ):
-    """
-    根据险种和保费条件查询可用于推荐的候选保险产品。当用户咨询具体保险产品或需要保险产品推荐时使用。
+    """根据险种和保费条件查询可用于推荐的候选保险产品。
 
-    Args:
-        categories: 产品分类列表，可选值为 medical、critical_illness、life、accident。
-        premium_min: 最低保费上限，可选参数，只返回最低保费小于该值的产品。
-        limit_per_category: 每个险种最多返回的产品数量，可选参数，默认5。
-    """
+     当用户咨询具体保险产品或需要保险产品推荐时使用。
 
+     Args:
+         categories: 产品分类列表，可选值为 medical、critical_illness、life、accident。
+         premium_min: 最低保费上限，可选参数，只返回最低保费小于该值的产品。
+         limit_per_category: 每个险种最多返回的产品数量，可选参数，默认5。
+     """
     # 1.组装参数，字段名对应 Java 侧的 ProductCandidateQueryDTO
     payload = {
         "categories": categories,
         "premiumMin": str(premium_min) if premium_min is not None else None,
         "limitPerCategory": limit_per_category,
     }
-
     try:
         # 2.调 Java 内部接口，业务数据不再由 Python 自己查库
-        return await call_java("POST", "/internal/v1/products/candidates", payload)
+        data = await call_java("POST", "/internal/v1/products/candidates", payload)
     except JavaServiceError as exc:
         # 3.失败时给模型一个可读的结果，让它能自然地告诉用户"暂时查不了"
         logger.error("查询候选产品失败", reason=str(exc))
         return {"error": "产品服务暂时不可用，请稍后再试"}
 
+    # 4.登记本轮推荐的候选产品，供「方案确认」卡片使用
+    if isinstance(data, list):
+        record_products(data)
+    return data
+
+
 @tool
 async def retrieve_insurance_clause(
-    query: str,
-    k: int,
-    product_id: int
+        query: str,
+        k: int,
+        product_id: int
 ):
     """查询指定保险产品的条款内容。
 
     Args:
         query: 需要从保险条款中查询的问题。
-        k: 返回的文档的数量
+        k: 返回的条款数量。
         product_id: 保险产品ID。
-    """
 
-    # 1.导入Retriever
+    返回 JSON 数组，每条结果带 source_id（S1、S2…）。
+    回答时必须依据返回内容，并在引用的句子末尾用 [S1] 标注来源编号。
+    """
+    # 模型偶尔会凭空给 product_id（实测出现过 0），那样检索必然为空，
+    # 它却会拿着空结果继续编答案。这里直接返回提示，让它在下一轮先查产品。
+    if not product_id or product_id <= 0:
+        return json.dumps(
+            {"error": "product_id 无效，请先调用 query_candidate_products 查询该产品的 id"},
+            ensure_ascii=False,
+        )
+    # 导入RAG Retriever
     from app.rag import retriever
 
-    # 2.检索
-    chunks: list[ParentChunk] = await retriever.retrieve(query, k, product_id)
+    # 检索。把 query 打进日志：多轮对话里模型是否已经把追问改写成完整问题，
+    # 只能靠这行日志判断（评测脚本只能测"检索本身"）
+    logger.info("条款检索", query=query, product_id=product_id, k=k)
+    chunks = await retriever.retrieve(query=query, k=k, product_id=product_id)
 
-    # 3.把查询到的ParentChunk变成字符串
-    results = [
-        f"section_path: {chunk.section_path}\n content:{chunk.content}"
-        for chunk in chunks
-    ]
+    # 登记为本轮引用来源（前端「引用来源」列表就来自这里）
+    sources = record_citations(chunks)
 
-    return results
+    # 只把模型用得上的字段给它：UUID、score 这类内部字段不进上下文，省 token
+    return json.dumps(
+        [
+            {
+                "source_id": source["source_id"],
+                "section_path": source["section_path"],
+                "content": source["content"],
+            }
+            for source in sources
+        ],
+        ensure_ascii=False,
+    )

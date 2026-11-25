@@ -1,11 +1,17 @@
 package com.insurance.biz.domain.vo;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * 历史消息里的一条。
  * <p>
- * 只保留前端要展示的两个字段：谁说的（role）、说了什么（content）。
- * 工具调用、系统提示这些内部消息在 Python 侧就被过滤掉了，
- * 不会顺着这个接口漏到浏览器。
+ * role / content 给气泡显示；additionalInfo 是助手回答附带的引用来源，
+ * 前端按 type=clause_sources 渲染成「引用来源」列表。
+ * 字段名用 snake_case，与 Python 侧和前端保持一致，所以显式标注 @JsonProperty。
  */
-public record ChatMessageVO(String role, String content) {
+public record ChatMessageVO(
+        String role,
+        String content,
+        @JsonProperty("additional_info") Object additionalInfo
+) {
 }

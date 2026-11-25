@@ -25,3 +25,9 @@ frontend/tsconfig.tsbuildinfo
 .vscode/
 .DS_Store
 Thumbs.db
+
+# ---------- 测试与评测产物 ----------
+.pytest_cache/
+agent-service/evals/reports/
+# Java 构建输出
+insurance-biz/target/
