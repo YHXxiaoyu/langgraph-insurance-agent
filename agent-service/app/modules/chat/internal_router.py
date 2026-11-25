@@ -38,7 +38,7 @@ async def internal_chat(request: InternalChatRequest, http_request: Request):
     # 只跑 Agent：归属校验由 Java 完成，Python 不查业务库
     service = ChatService(http_request.app.state.agent)
     async for sse in service.internal_chat_stream(
-            request.thread_id, request.message, request.decision):
+            request.thread_id, request.user_id, request.message, request.decision):
         yield sse
 
 
@@ -55,3 +55,11 @@ async def delete_thread(thread_id: UUID, http_request: Request) -> None:
     """会话删除后的 checkpoint 清理，由 Java 异步调用"""
     service = ChatService(http_request.app.state.agent)
     await service.delete_history(thread_id)
+
+@router.post("/chat", response_class=EventSourceResponse, dependencies=[Depends(verify_internal_token)])
+async def internal_chat(request: InternalChatRequest, http_request: Request):
+    # 只跑 Agent：归属校验由 Java 完成，Python 不查业务库
+    service = ChatService(http_request.app.state.agent)
+    async for sse in service.internal_chat_stream(
+            request.thread_id, request.user_id, request.message, request.decision):
+        yield sse

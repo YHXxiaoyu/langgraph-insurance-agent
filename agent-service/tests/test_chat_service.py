@@ -53,9 +53,8 @@ class FakeAgent:
         self.updates.append(values)
 
 
-async def collect(service: ChatService, thread_id, message=None, decision=None):
-    return [sse async for sse in service._stream(thread_id, message, decision)]
-
+async def collect(service: ChatService, thread_id, message=None, decision=None, user_id=1):
+    return [sse async for sse in service._stream(thread_id, user_id, message, decision)]
 
 # ---------------- 历史消息 ----------------
 
@@ -132,13 +131,12 @@ async def test_stream_emits_citations_and_persists_them():
     out = await collect(ChatService(agent), uuid4(), "问")
 
     info = next(s for s in out if s.event == "additional_info").data
-    assert info["type"] == "clause_sources"
-    assert info["sources"][0]["source_id"] == "S1"
-    assert info["sources"][0]["section_path"] == ["1 总则", "1.1 等待期"]
+    assert info["clause_sources"][0]["source_id"] == "S1"
+    assert info["clause_sources"][0]["section_path"] == ["1 总则", "1.1 等待期"]
 
     # 写回 checkpoint：同一条消息的 additional_kwargs 里要有引用
     saved = agent.updates[0]["messages"][0]
-    assert saved.additional_kwargs["additional_info"]["sources"][0]["source_id"] == "S1"
+    assert saved.additional_kwargs["additional_info"]["clause_sources"][0]["source_id"] == "S1"
 
 
 async def test_stream_emits_interrupt_when_graph_pauses():

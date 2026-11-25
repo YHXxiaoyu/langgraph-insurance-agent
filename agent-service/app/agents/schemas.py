@@ -29,3 +29,6 @@ class InsuranceAgentState(MessagesState):
     # 待确认的方案。放在 state 里而不是 ContextVar：
     # interrupt 恢复时节点会从头重跑，ContextVar 那时已经是空的
     pending_plan: dict | None
+    # 本轮对话的归属用户。内部接口没有登录态，Java 把 userId 透传进来；
+    # 方案落库、后续发保单都要用它
+    user_id: int | None

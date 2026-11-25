@@ -10,7 +10,9 @@ from app.core.logging import get_logger
 from app.agents.citations import clear as clear_citations
 from app.agents.citations import current as current_citations
 from app.agents.citations import reset as reset_citations
+from app.agents.plan import build_saved_payload
 from app.agents.plan import clear as clear_plan_products
+from app.agents.plan import current_saved
 from app.agents.plan import reset as reset_plan_products
 from app.modules.chat.schema import ChatHistoryResponse, ChatMessageResponse
 
@@ -24,11 +26,12 @@ class ChatService:
     async def internal_chat_stream(
         self,
         thread_id: UUID,
+        user_id: int | None,
         message: str | None,
         decision: dict[str, Any] | None = None,
     ):
         """内部接口：会话归属由 Java 校验，这里只负责跑 Agent"""
-        async for sse in self._stream(thread_id, message, decision):
+        async for sse in self._stream(thread_id, user_id, message, decision):
             yield sse
 
     async def chat_history(self, thread_id: UUID) -> ChatHistoryResponse:
@@ -68,6 +71,7 @@ class ChatService:
     async def _stream(
         self,
         thread_id: UUID,
+        user_id: int | None,
         message: str | None,
         decision: dict[str, Any] | None,
     ):
@@ -77,11 +81,15 @@ class ChatService:
         reset_citations()
         reset_plan_products()
 
-        # 带 decision = 用户在确认卡片上点了按钮，从断点恢复；否则是新的一轮输入
+        # 带 decision = 用户在确认卡片上点了按钮，从断点恢复；否则是新的一轮输入。
+        # 新的一轮必须把 user_id 写进 state：确认方案时要用它调 Java 落库
         _input = (
             Command(resume=decision)
             if decision
-            else {"messages": [HumanMessage(content=message or "")]}
+            else {
+                "messages": [HumanMessage(content=message or "")],
+                "user_id": user_id,
+            }
         )
 
         try:
@@ -110,13 +118,27 @@ class ChatService:
             return
         finally:
             sources = current_citations()
+            saved_plan = current_saved()
             clear_citations()
             clear_plan_products()
 
+        # 引用来源和已保存方案是两个独立的附加信息：分两条事件推，
+        # 前端会把它们都挂到最后一条助手消息上
         if sources:
-            payload = {"type": "clause_sources", "sources": sources}
-            yield ServerSentEvent(data=payload, event="additional_info")
-            await self._persist_citations(thread_id, payload)
+            # 和写回 checkpoint 用同一套键：前端 normalizeAdditionalInfo
+            # 对 record.clause_sources 和 record.sources 都能识别
+            yield ServerSentEvent(
+                data={"clause_sources": sources},
+                event="additional_info",
+            )
+        if saved_plan:
+            yield ServerSentEvent(
+                data=build_saved_payload(saved_plan),
+                event="additional_info",
+            )
+
+        # 落库后再写回 checkpoint，刷新页面时产品卡片和引用都还在
+        await self._persist_additional_info(thread_id, sources, saved_plan)
 
         # 流正常结束时，图可能停在等待确认的节点上，把 interrupt 推给前端
         snapshot = await self.agent.aget_state(config)
@@ -126,12 +148,25 @@ class ChatService:
 
         yield ServerSentEvent(data="END", event="done")
 
-    async def _persist_citations(self, thread_id: UUID, payload: dict) -> None:
-        """把引用来源写回本轮最后一条 AI 回复。
+    async def _persist_additional_info(
+        self,
+        thread_id: UUID,
+        sources: list[dict[str, Any]],
+        saved_plan: dict[str, Any] | None,
+    ) -> None:
+        """把引用来源 / 已保存方案写回本轮最后一条 AI 回复。
 
         不能依赖流事件里的 message id：推荐路径走 create_agent 子图，
         流出来的基本是 delta 字典，拿不到完整的 AIMessage。
         """
+        info: dict[str, Any] = {}
+        if sources:
+            info["clause_sources"] = sources
+        if saved_plan:
+            info.update(build_saved_payload(saved_plan))
+        if not info:
+            return
+
         config = {"configurable": {"thread_id": str(thread_id)}}
         snapshot = await self.agent.aget_state(config)
         messages = snapshot.values.get("messages", [])
@@ -145,7 +180,7 @@ class ChatService:
                 updated = message.model_copy(update={
                     "additional_kwargs": {
                         **message.additional_kwargs,
-                        "additional_info": payload,
+                        "additional_info": info,
                     },
                 })
                 await self.agent.aupdate_state(config, {"messages": [updated]})

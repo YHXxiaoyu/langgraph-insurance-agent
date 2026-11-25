@@ -500,6 +500,21 @@ Java 删 `chat_threads` 记录后，Python 侧要清掉对应 thread 的 checkpo
   - 注意：Lightpanda 无头浏览器读不了超过 ~20 秒的长 SSE 流（报 `Failed to read response body`），
     同一请求用 curl 走 Nginx 正常（11.5 秒、301 条 message + interrupt），长轮次对话请在真实浏览器里点
 
+- [x] **保险方案落库 + 投保状态打通（Java 域补齐，2026-11-25）**
+  - Java 新增方案域：`InsurancePlan` / `InsurancePlanItem` 两张表补齐 PO、Mapper、Service、Controller
+  - 接口：`POST /internal/v1/insurance-plans`（Python 确认方案后落库）、
+    `GET /api/v1/insurance-plans`、`GET /api/v1/insurance-plans/{id}`、
+    `PATCH /api/v1/insurance-plans/{id}/items/{itemId}/insured`
+  - 规则：查询一律带 `user_id`（别人的方案 404）、重复标记幂等、
+    全部明细投完方案转 `insured`、明细/方案状态分别流转（applying ↔ insured）
+  - Python 侧：`confirm_plan` 的 approve 分支改 `async`，调内部接口落库；
+    `user_id` 进 state；落库结果通过 `additional_info` 的 `plan_items` 推给前端
+  - 坑：LangGraph 节点跑在子任务里，ContextVar 的 `set()` 传不回父上下文，
+    必须改成"改共享容器里的元素"（和 citations 往同一个 list 里 append 同理）
+  - 验收：对话推荐 → 卡片确认 → MySQL 出现方案行（846.30 元）+ 2 条明细 →
+    `plan_items` 事件带 plan_id/item_id → 历史回放仍在 → 两次 PATCH 后状态
+    `uninsured → applying → insured`，数据库一致
+
 ### 🎯 核心（保留，约 4 人天）
 
 - [x] **Python pytest 基础**（2026-11-24 完成）
