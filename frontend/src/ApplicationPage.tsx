@@ -10,13 +10,14 @@ import {
 import { Alert, Button, Steps } from 'antd';
 import { useState } from 'react';
 
-import { ApiError, errorText, markPlanItemInsured } from './api';
-import type { AuthSession } from './types';
+import { ApiError, createOrder, errorText, payOrder } from './api';
+import type { AuthSession, Order } from './types';
 
 interface ApplicationPageProps {
   session: AuthSession;
   onBack: () => void;
   onSessionExpired: () => void;
+  onOpenPolicies: () => void;
 }
 
 const APPLICATION_STEPS = [
@@ -27,7 +28,12 @@ const APPLICATION_STEPS = [
   { title: '确认支付', icon: <CheckCircleOutlined /> },
 ];
 
-export function ApplicationPage({ session, onBack, onSessionExpired }: ApplicationPageProps) {
+export function ApplicationPage({
+  session,
+  onBack,
+  onSessionExpired,
+  onOpenPolicies,
+}: ApplicationPageProps) {
   const params = new URLSearchParams(window.location.search);
   const productId = params.get('product_id');
   const planId = params.get('plan_id');
@@ -35,6 +41,7 @@ export function ApplicationPage({ session, onBack, onSessionExpired }: Applicati
   const [currentStep, setCurrentStep] = useState(0);
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function pay() {
@@ -42,7 +49,12 @@ export function ApplicationPage({ session, onBack, onSessionExpired }: Applicati
     setPaying(true);
     setError(null);
     try {
-      await markPlanItemInsured(planId, itemId);
+      // 两步：先下单（待支付），再支付。
+      // 拆成两个接口是为了让"订单"成为真实的业务对象——
+      // 支付成功才发保单，订单上能查到金额和订单号。
+      const created = await createOrder({ planId, itemIds: [itemId] });
+      const paidOrder = await payOrder(created.id);
+      setOrder(paidOrder);
       setPaid(true);
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) {
@@ -86,8 +98,13 @@ export function ApplicationPage({ session, onBack, onSessionExpired }: Applicati
             <Alert
               showIcon
               type="success"
-              message="投保成功"
-              description="保单状态已更新为投保成功，后续可以在理赔演示中查询到这份保单。"
+              message="支付成功"
+              description={
+                order
+                  ? `订单号 ${order.order_number ?? '—'}，实付 ¥${moneyOf(order.total_premium)}。保单已生成，可以在「我的保单」里查看。`
+                  : '保单已生成，可以在「我的保单」里查看。'
+              }
+              action={<Button size="small" onClick={onOpenPolicies}>我的保单</Button>}
             />
           ) : (
             <div className="application-step-body">
@@ -127,4 +144,10 @@ export function ApplicationPage({ session, onBack, onSessionExpired }: Applicati
       </main>
     </div>
   );
+}
+
+/** 金额展示：后端返回的是数字或数字字符串，统一按千分位显示 */
+function moneyOf(value: unknown): string {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount.toLocaleString('zh-CN') : String(value ?? '—');
 }

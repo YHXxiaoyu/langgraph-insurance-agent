@@ -4,7 +4,9 @@ import type {
   ChatThread,
   InsuranceCategory,
   LoginResult,
+  Order,
   PlanInterrupt,
+  Policy,
   Product,
 } from './types';
 
@@ -143,15 +145,40 @@ export function listProducts(
   return publicRequest<ProductPage>(`/products?${params.toString()}`, { signal });
 }
 
-export function markPlanItemInsured(planId: string, itemId: string): Promise<unknown> {
-  return authorizedRequest<unknown>(
-    `/insurance-plans/${encodeURIComponent(planId)}/items/${encodeURIComponent(itemId)}/insured`,
-    { method: 'PATCH' },
-  );
-}
-
 export function getInsurancePlan(planId: string): Promise<unknown> {
   return authorizedRequest<unknown>(`/insurance-plans/${encodeURIComponent(planId)}`);
+}
+
+/** 我的保单，Java 侧已按生效时间倒序并做了到期状态懒更新 */
+export function listPolicies(): Promise<Policy[]> {
+  return authorizedRequest<Policy[]>('/policies');
+}
+
+/**
+ * 下单：只传方案和要投保的明细 id，保费由 Java 从方案里读，前端不做定价。
+ * 同一方案同一批明细重复调用会返回同一张订单（Java 侧有幂等键）。
+ */
+export function createOrder(input: {
+  planId: string;
+  itemIds: string[];
+  threadId?: string;
+}): Promise<Order> {
+  return authorizedRequest<Order>('/orders', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+/** 支付：订单转已支付，Java 同事务里发保单 + 把方案项标记已投保 */
+export function payOrder(orderId: string): Promise<Order> {
+  return authorizedRequest<Order>(`/orders/${encodeURIComponent(orderId)}/pay`, {
+    method: 'POST',
+  });
+}
+
+/** 我的订单，按下单时间倒序 */
+export function listOrders(): Promise<Order[]> {
+  return authorizedRequest<Order[]>('/orders');
 }
 
 export function listChatThreads(): Promise<ChatThread[]> {

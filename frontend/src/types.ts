@@ -116,3 +116,51 @@ export type AdditionalInfo =
   | { type: 'clause_sources'; sources: ClauseSource[] }
   | { type: 'products'; title: string; products: AdditionalProduct[] }
   | { type: 'policies'; title: string; policies: AdditionalPolicy[] };
+
+/**
+ * 保单，字段与 Java 侧 PolicyVO 的 snake_case 一一对应。
+ * <p>
+ * 与上面的 AdditionalPolicy 区分开：那个是 Agent 在对话里推出来的
+ * additional_info 结构（字段很不固定），这个是「我的保单」页面的真实接口数据。
+ */
+export interface Policy {
+  id: string;
+  policy_number?: string | null;
+  product_id?: number | string | null;
+  product_name?: string | null;
+  category?: string | null;
+  insurer?: string | null;
+  status?: string | null;
+  effective_at?: string | null;
+  expires_at?: string | null;
+  created_at?: string | null;
+  [key: string]: unknown;
+}
+
+/** PATCH .../items/{itemId}/insured 的返回体 */
+export interface MarkInsuredResult {
+  plan?: unknown;
+  policy?: Policy | null;
+}
+
+/** 订单项，字段对齐 Java 侧 OrderItem 的 snake_case */
+export interface OrderItem {
+  plan_id?: string | null;
+  plan_item_id?: string | null;
+  product_id?: number | string | null;
+  product_name?: string | null;
+  premium?: number | string | null;
+  priority?: number | null;
+}
+
+/** 投保订单，字段对齐 Java 侧 OrderVO */
+export interface Order {
+  id: string;
+  order_number?: string | null;
+  status?: string | null;
+  total_premium?: number | string | null;
+  items?: OrderItem[];
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+}

@@ -8,12 +8,15 @@ import com.insurance.biz.domain.dto.CreatePlanDTO;
 import com.insurance.biz.domain.po.InsurancePlan;
 import com.insurance.biz.domain.po.InsurancePlanItem;
 import com.insurance.biz.domain.po.Product;
+import com.insurance.biz.domain.vo.MarkInsuredVO;
 import com.insurance.biz.domain.vo.PlanItemVO;
 import com.insurance.biz.domain.vo.PlanVO;
+import com.insurance.biz.domain.vo.PolicyVO;
 import com.insurance.biz.mapper.InsurancePlanItemMapper;
 import com.insurance.biz.mapper.InsurancePlanMapper;
 import com.insurance.biz.mapper.ProductMapper;
 import com.insurance.biz.service.IInsurancePlanService;
+import com.insurance.biz.service.IPolicyService;
 import com.insurance.biz.utils.UserContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -40,6 +43,7 @@ public class InsurancePlanServiceImpl extends ServiceImpl<InsurancePlanMapper, I
 
     private final InsurancePlanItemMapper itemMapper;
     private final ProductMapper productMapper;
+    private final IPolicyService policyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -105,9 +109,9 @@ public class InsurancePlanServiceImpl extends ServiceImpl<InsurancePlanMapper, I
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public PlanVO markItemInsured(String planId, String itemId) {
+    public MarkInsuredVO markItemInsured(String planId, String itemId) {
         // 1.方案必须属于当前用户；别人的方案在这里就是"查不到"
-        requireOwned(planId);
+        InsurancePlan plan = requireOwned(planId);
 
         // 2.明细必须属于这个方案，防止拿自己的 planId 配别人的 itemId
         InsurancePlanItem item = itemMapper.selectOne(
@@ -118,8 +122,7 @@ public class InsurancePlanServiceImpl extends ServiceImpl<InsurancePlanMapper, I
             throw new NotFoundException("方案项不存在");
         }
 
-        // 3.已经是已投保就直接返回：用户重复点支付不能重复产生副作用。
-        //    TODO(保单域): 下一步在这里发保单，届时"已投保"才真正对应一条 policies 记录
+        // 3.已经是已投保就不再改状态：用户重复点支付不能重复产生副作用
         if (!STATUS_INSURED.equals(item.getStatus())) {
             InsurancePlanItem update = new InsurancePlanItem();
             update.setId(itemId);
@@ -140,7 +143,12 @@ public class InsurancePlanServiceImpl extends ServiceImpl<InsurancePlanMapper, I
         planUpdate.setStatus(remaining == 0 ? STATUS_INSURED : STATUS_APPLYING);
         updateById(planUpdate);
 
-        return toVO(getById(planId));
+        // 5.发保单。幂等由方案项 id 派生主键保证：重复调用拿到的是同一张，
+        //   和上面的状态更新在同一个事务里，要么都成功要么都回滚
+        PolicyVO policy = policyService.issueForPlanItem(plan.getUserId(), item);
+
+        // 6.方案最新状态和保单一起返回，支付页可以直接显示保单号
+        return new MarkInsuredVO(toVO(getById(planId)), policy);
     }
 
     /**
@@ -174,8 +182,8 @@ public class InsurancePlanServiceImpl extends ServiceImpl<InsurancePlanMapper, I
                         Wrappers.<Product>lambdaQuery().in(
                                 Product::getId,
                                 items.stream().map(InsurancePlanItem::getProductId).toList()))
-                  .stream()
-                  .collect(Collectors.toMap(Product::getId, Function.identity()));
+                .stream()
+                .collect(Collectors.toMap(Product::getId, Function.identity()));
 
         List<PlanItemVO> itemVOs = items.stream()
                 .map(item -> PlanItemVO.from(item, productMap.get(item.getProductId())))

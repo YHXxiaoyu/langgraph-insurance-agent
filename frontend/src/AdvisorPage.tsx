@@ -4,6 +4,7 @@ import {
   CustomerServiceOutlined,
   DeleteOutlined,
   EditOutlined,
+  FileProtectOutlined,
   MessageOutlined,
   FilePdfOutlined,
   PlusOutlined,
@@ -37,6 +38,7 @@ interface AdvisorPageProps {
   onBack: () => void;
   onSessionExpired: () => void;
   onApplyProduct: (target: ApplyProductTarget) => void;
+  onOpenPolicies: () => void;
 }
 
 interface ApplyProductTarget {
@@ -45,7 +47,13 @@ interface ApplyProductTarget {
   itemId: string;
 }
 
-export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct }: AdvisorPageProps) {
+export function AdvisorPage({
+  session,
+  onBack,
+  onSessionExpired,
+  onApplyProduct,
+  onOpenPolicies,
+}: AdvisorPageProps) {
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -346,6 +354,7 @@ export function AdvisorPage({ session, onBack, onSessionExpired, onApplyProduct 
         </div>
         <div>
           <span>{session.user.displayName || session.user.username}</span>
+          <Button icon={<FileProtectOutlined />} onClick={onOpenPolicies}>我的保单</Button>
           <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回商城</Button>
         </div>
       </header>

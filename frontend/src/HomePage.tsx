@@ -31,6 +31,8 @@ interface HomePageProps {
   onAuthenticated: (session: AuthSession) => void;
   onLogout: () => void;
   onConsult: () => void;
+  onOpenPolicies: () => void;
+  onOpenOrders: () => void;
 }
 
 export function HomePage({
@@ -39,6 +41,8 @@ export function HomePage({
   onAuthenticated,
   onLogout,
   onConsult,
+  onOpenPolicies,
+  onOpenOrders,
 }: HomePageProps) {
   const [category, setCategory] = useState<CategoryFilter>('all');
   const [products, setProducts] = useState<Product[]>([]);
@@ -105,6 +109,29 @@ export function HomePage({
           <nav className="site-nav" aria-label="主导航">
             <a className="is-active" href="#products">保险产品</a>
             <a href="#service">服务保障</a>
+            {/*
+              用 <a> 而不是 Button：复用 .site-nav a 的间距/悬停/下划线样式，
+              看起来和左边两项完全一致。preventDefault 是因为这个 SPA 走
+              pushState 路由，真跳转会让整页刷新。
+            */}
+            <a
+              href="/policies"
+              onClick={(event) => {
+                event.preventDefault();
+                onOpenPolicies();
+              }}
+            >
+              我的保单
+            </a>
+            <a
+              href="/orders"
+              onClick={(event) => {
+                event.preventDefault();
+                onOpenOrders();
+              }}
+            >
+              我的订单
+            </a>
           </nav>
           <div className="site-actions">
             {session ? (

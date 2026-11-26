@@ -2,6 +2,7 @@ package com.insurance.biz.controller;
 
 import com.insurance.biz.common.domain.R;
 import com.insurance.biz.config.OpenApiConfig;
+import com.insurance.biz.domain.vo.MarkInsuredVO;
 import com.insurance.biz.domain.vo.PlanVO;
 import com.insurance.biz.service.IInsurancePlanService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -39,9 +40,9 @@ public class InsurancePlanController {
     }
 
     @Operation(summary = "标记方案项已投保",
-            description = "投保流程支付成功后调用。重复调用幂等，不重复产生副作用")
+            description = "投保流程支付成功后调用。同时发一张保单；重复调用幂等，返回同一张保单")
     @PatchMapping("/{id}/items/{itemId}/insured")
-    public R<PlanVO> markItemInsured(
+    public R<MarkInsuredVO> markItemInsured(
             @Parameter(description = "方案 ID") @PathVariable String id,
             @Parameter(description = "方案项 ID") @PathVariable String itemId) {
         return R.ok(planService.markItemInsured(id, itemId));

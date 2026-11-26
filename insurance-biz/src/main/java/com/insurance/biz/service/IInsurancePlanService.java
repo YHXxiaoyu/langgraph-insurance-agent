@@ -3,6 +3,7 @@ package com.insurance.biz.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.insurance.biz.domain.dto.CreatePlanDTO;
 import com.insurance.biz.domain.po.InsurancePlan;
+import com.insurance.biz.domain.vo.MarkInsuredVO;
 import com.insurance.biz.domain.vo.PlanVO;
 
 import java.util.List;
@@ -19,6 +20,6 @@ public interface IInsurancePlanService extends IService<InsurancePlan> {
     /** 当前用户的方案详情，不存在或不属于自己都抛 404 */
     PlanVO getMine(String planId);
 
-    /** 把方案里的某个产品标记为已投保；重复调用幂等 */
-    PlanVO markItemInsured(String planId, String itemId);
+    /** 把方案里的某个产品标记为已投保，同时发保单；重复调用幂等 */
+    MarkInsuredVO markItemInsured(String planId, String itemId);
 }

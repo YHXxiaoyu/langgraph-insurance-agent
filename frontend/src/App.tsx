@@ -4,6 +4,8 @@ import { AdvisorPage } from './AdvisorPage';
 import { ApplicationPage } from './ApplicationPage';
 import { clearSession, readSession, saveSession } from './auth';
 import { HomePage } from './HomePage';
+import { OrdersPage } from './OrdersPage';
+import { PoliciesPage } from './PoliciesPage';
 import type { AuthSession } from './types';
 
 function navigate(path: string) {
@@ -38,7 +40,9 @@ export default function App() {
   function logout() {
     clearSession();
     setSession(null);
-    if (path === '/advisor' || path === '/apply') navigate('/');
+    if (path === '/advisor' || path === '/apply' || path === '/policies' || path === '/orders') {
+      navigate('/');
+    }
   }
 
   function sessionExpired() {
@@ -54,6 +58,7 @@ export default function App() {
         onBack={() => navigate('/')}
         onSessionExpired={sessionExpired}
         onApplyProduct={(target) => navigate(applyPath(target))}
+        onOpenPolicies={() => navigate('/policies')}
       />
     );
   }
@@ -64,6 +69,29 @@ export default function App() {
         session={session}
         onBack={() => navigate('/advisor')}
         onSessionExpired={sessionExpired}
+        onOpenPolicies={() => navigate('/policies')}
+      />
+    );
+  }
+
+  if (path === '/policies' && session) {
+    return (
+      <PoliciesPage
+        session={session}
+        onBack={() => navigate('/')}
+        onSessionExpired={sessionExpired}
+        onOpenOrders={() => navigate('/orders')}
+      />
+    );
+  }
+
+  if (path === '/orders' && session) {
+    return (
+      <OrdersPage
+        session={session}
+        onBack={() => navigate('/')}
+        onSessionExpired={sessionExpired}
+        onOpenPolicies={() => navigate('/policies')}
       />
     );
   }
@@ -71,10 +99,14 @@ export default function App() {
   return (
     <HomePage
       session={session}
-      initialAuthOpen={path === '/advisor' || path === '/apply'}
+      initialAuthOpen={
+        path === '/advisor' || path === '/apply' || path === '/policies' || path === '/orders'
+      }
       onAuthenticated={authenticated}
       onLogout={logout}
       onConsult={() => navigate('/advisor')}
+      onOpenPolicies={() => navigate('/policies')}
+      onOpenOrders={() => navigate('/orders')}
     />
   );
 }

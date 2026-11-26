@@ -515,6 +515,22 @@ Java 删 `chat_threads` 记录后，Python 侧要清掉对应 thread 的 checkpo
     `plan_items` 事件带 plan_id/item_id → 历史回放仍在 → 两次 PATCH 后状态
     `uninsured → applying → insured`，数据库一致
 
+- [x] **订单域 + 保单/订单拆分（2026-11-26）**
+  - Java 新增订单域：`Order` / `OrderItem` 的 PO、Mapper、DTO、VO、Service、Controller，
+    复用已设计好的 `orders` 表，**没有改表结构**
+  - 接口：`POST /api/v1/orders`（下单）、`POST /api/v1/orders/{id}/pay`（支付）、
+    `GET /api/v1/orders`、`GET /api/v1/orders/{id}`
+  - 规则：价格只从方案明细读（前端传不了价）；下单与出单分离，保单只在支付成功时产生；
+    支付在同事务里逐项调用方案域的 `markItemInsured`（标记 + 发单 + 推进方案状态）
+  - 幂等三层：下单幂等键（明细排序后 MD5 + 唯一索引）→ 支付幂等（已支付直接返回）→
+    保单主键由方案项 id 派生（name-based UUID）
+  - 前端：投保页「支付」改为「下单 → 支付」，成功提示显示订单号与实付金额；
+    新增「我的订单」独立页面，与「我的保单」拆开（订单是短周期交易，保单是长期契约，
+    且待支付订单需要单独提醒）；两张卡片抽到 `insuranceCards.tsx` 共用
+  - 验收：脚本跑通注册 → 建方案 → 下单 → 重复下单（顺序反过来，返回同一张）→ 支付 →
+    重复支付 → 2 张保单 → 方案转 insured；`tsc --noEmit` 通过，页面人工点验
+  - 没做（已记录）：真实支付渠道、取消订单、订单详情页、待支付订单重新支付入口、保费试算
+
 ### 🎯 核心（保留，约 4 人天）
 
 - [x] **Python pytest 基础**（2026-11-24 完成）
