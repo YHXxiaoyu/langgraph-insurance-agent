@@ -9,9 +9,11 @@ import com.insurance.biz.domain.po.OrderItem;
 import com.insurance.biz.domain.vo.OrderVO;
 import com.insurance.biz.domain.vo.PlanItemVO;
 import com.insurance.biz.domain.vo.PlanVO;
+import com.insurance.biz.domain.vo.PremiumQuoteVO;
 import com.insurance.biz.mapper.OrderMapper;
 import com.insurance.biz.service.IInsurancePlanService;
 import com.insurance.biz.service.IOrderService;
+import com.insurance.biz.service.IPremiumQuoteService;
 import com.insurance.biz.utils.UserContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
@@ -24,11 +26,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -53,6 +53,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final IInsurancePlanService planService;
+    private final IPremiumQuoteService quoteService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -68,6 +69,9 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
         List<String> itemIds = dto.itemIds().stream().distinct().toList();
 
+        // 3.有试算就先把试算记录取出来：校验归属（getMine 自带 404）、有效期、产品对得上
+        PremiumQuoteVO quote = resolveQuote(dto.quoteId(), itemIds);
+
         List<OrderItem> items = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
         for (String itemId : itemIds) {
@@ -79,9 +83,20 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                 throw new BadRequestException("该产品已投保，无需重复下单");
             }
 
-            BigDecimal premium = item.annualPremiumBudget() == null
-                    ? BigDecimal.ZERO
-                    : item.annualPremiumBudget();
+            BigDecimal premium;
+            if (quote != null) {
+                // 试算价优先：这是用户刚才看到、并同意支付的那个数
+                if (!quote.productId().equals(item.productId())) {
+                    throw new BadRequestException("试算报价与所选产品不一致");
+                }
+                premium = quote.totalPremium();
+            } else {
+                // 没走试算时退回方案项里的预算估计，属于"旧路径"，以后会收掉
+                premium = item.annualPremiumBudget() == null
+                        ? BigDecimal.ZERO
+                        : item.annualPremiumBudget();
+            }
+
             items.add(new OrderItem(
                     plan.id(),
                     item.id(),
@@ -92,15 +107,16 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             total = total.add(premium);
         }
 
-        // 3.幂等：同一用户 + 同一方案 + 同一批明细，算出来的键是一样的。
-        //   已经有了就直接返回，重复点击不会产生第二张订单
-        String key = idempotencyKey(userId, plan.id(), itemIds);
+        // 4.幂等：同一用户 + 同一方案 + 同一批明细 + 同一份试算，算出来的键是一样的。
+        //   把试算 id 也算进去，是因为换了参数重新试算后价格变了，应该允许生成新订单
+        String key = idempotencyKey(userId, plan.id(), itemIds,
+                quote == null ? null : quote.id());
         Order existing = lambdaQuery().eq(Order::getIdempotencyKey, key).one();
         if (existing != null) {
             return toVO(existing);
         }
 
-        // 4.组装订单
+        // 5.组装订单
         String orderId = UUID.randomUUID().toString();
         Order order = new Order();
         order.setId(orderId);
@@ -114,6 +130,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
                 "plan_id", plan.id(),
                 "plan_name", String.valueOf(plan.planName()),
                 "summary", String.valueOf(plan.summary())));
+        order.setQuoteIds(quote == null ? List.of() : List.of(quote.id()));
         order.setIdempotencyKey(key);
         order.setIdempotencyFingerprint(key);
 
@@ -124,7 +141,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             return toVO(lambdaQuery().eq(Order::getIdempotencyKey, key).one());
         }
 
-        // 5.created_at / updated_at 是数据库默认值，回查一次才拿得到
+        // 6.created_at / updated_at 是数据库默认值，回查一次才拿得到
         return toVO(getById(orderId));
     }
 
@@ -179,6 +196,26 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
         return toVO(requireOwned(orderId));
     }
 
+    /**
+     * 取试算记录并校验能否用于下单；没传 quoteId 时返回 null。
+     * <p>
+     * 一次试算只对应一个产品，所以引用试算时只能买一项 —— 这条限制让"价格来源"
+     * 始终只有一个，不会出现"一单里有的按试算、有的按预算"这种说不清的情况。
+     */
+    private PremiumQuoteVO resolveQuote(String quoteId, List<String> itemIds) {
+        if (quoteId == null || quoteId.isBlank()) {
+            return null;
+        }
+        if (itemIds.size() != 1) {
+            throw new BadRequestException("引用试算报价时，一次只能投保一个产品");
+        }
+        PremiumQuoteVO quote = quoteService.getMine(quoteId);
+        if (quote.expiresAt() == null || quote.expiresAt().isBefore(LocalDateTime.now())) {
+            throw new BadRequestException("试算报价已过期，请重新试算");
+        }
+        return quote;
+    }
+
     /** 取订单并校验归属：别人的订单在 SQL 层就查不到 */
     private Order requireOwned(String orderId) {
         Order order = lambdaQuery()
@@ -192,14 +229,16 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     }
 
     /**
-     * 幂等键 = SHA-256(用户 id | 方案 id | 排序后的明细 id)。
+     * 幂等键 = MD5(用户 id | 方案 id | 排序后的明细 id | 试算 id)。
      * <p>
      * 明细先排序再拼，是为了让"先选 A 再选 B"和"先选 B 再选 A"得到同一个键 ——
-     * 否则用户换个顺序点，就会多出一张订单。
+     * 否则用户换个顺序点，就会多出一张订单。试算 id 进键，是为了让"重新试算后价格变了"
+     * 能生成新订单，而不是被旧订单挡住。
      */
-    private String idempotencyKey(Long userId, String planId, List<String> itemIds) {
-        String raw = userId + "|" + planId + "|" + itemIds.stream().sorted()
-                .collect(Collectors.joining(","));
+    private String idempotencyKey(Long userId, String planId, List<String> itemIds, String quoteId) {
+        String raw = userId + "|" + planId + "|"
+                + itemIds.stream().sorted().collect(Collectors.joining(","))
+                + "|" + (quoteId == null ? "" : quoteId);
         return DigestUtils.md5DigestAsHex(raw.getBytes(StandardCharsets.UTF_8));
     }
 

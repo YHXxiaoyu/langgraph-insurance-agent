@@ -56,6 +56,15 @@ public class Order {
     private Map<String, Object> recommendationSnapshot;
 
     /**
+     * 本单引用了哪几次试算记录。
+     * <p>
+     * 有它才能回答"这笔钱是按什么价算的"：点开 quote 能看到当时的入参、系数和有效期。
+     * 没走试算的老订单是空数组。
+     */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<String> quoteIds;
+
+    /**
      * 幂等键：同一用户对同一个方案的同一批明细重复下单时，算出来是同一个值，
      * 数据库唯一索引会挡住第二次插入，接口直接把已有订单返回。
      */

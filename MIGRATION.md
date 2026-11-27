@@ -531,6 +531,24 @@ Java 删 `chat_threads` 记录后，Python 侧要清掉对应 thread 的 checkpo
     重复支付 → 2 张保单 → 方案转 insured；`tsc --noEmit` 通过，页面人工点验
   - 没做（已记录）：真实支付渠道、取消订单、订单详情页、待支付订单重新支付入口、保费试算
 
+- [x] **保费试算（demo_formula，2026-11-27）**
+  - Java 新增试算域：`PremiumQuote` 的 PO / Mapper / DTO / VO、`IPremiumQuoteService`、
+    `PremiumQuoteController`；`ProductController` 增加 `GET /api/v1/products/{id}/pricing-form`
+  - 接口：`POST /api/v1/premium-quotes`（试算并落库）、`GET /api/v1/premium-quotes/{id}`
+  - 定价：`DemoFormulaPricing` 纯函数，`基准保费 × 保额系数 × 年龄系数 × 性别系数 × 社保系数`；
+    保额系数夹在 0.5~3.0；社保系数只作用于医疗险；每一步系数和算式随结果返回
+  - 存快照：入参 + 结果都进 `premium_quotes`，报价 24 小时有效；`pricing_mode = demo_formula`
+  - 订单引用：`CreateOrderDTO.quoteId` → 校验归属 / 未过期 / 产品一致 / 只买一项，
+    订单金额取试算价，引用关系记入 `orders.quote_ids`；幂等键加入 quoteId
+  - 前端：投保页第一步变成按后端 `fields` 渲染的真表单 → 试算 → 显示逐行算式与有效期；
+    改参数清空旧价；支付时携带 quoteId
+  - 坑：第一版解释文案用了"夹完上下限"的系数拼算式，医疗险显示成
+    `50万 ÷ 300万 = 0.500`，用户一验算就发现；改成先算原始值再夹、分情况写文案
+  - 验收：重疾 3185×0.85×1.05=2842.61、医疗 255×0.5×0.95×1.3=157.46 均与手算一致；
+    产品不一致 / 引用试算买多项均 400；下单金额等于试算价；重复下单返回同一张；
+    支付后出单、方案转 applying
+  - 没做（已记录）：真实费率表解析、核保、保司接口对接、表单真实配置
+
 ### 🎯 核心（保留，约 4 人天）
 
 - [x] **Python pytest 基础**（2026-11-24 完成）

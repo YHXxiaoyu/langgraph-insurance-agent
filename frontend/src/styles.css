@@ -1494,6 +1494,68 @@ a {
   justify-content: flex-end;
 }
 
+/* ---- 保费试算 ---- */
+
+.quote-form {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.quote-field {
+  display: grid;
+  gap: 6px;
+}
+
+.quote-field label {
+  color: #344548;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.quote-field .quote-unit {
+  color: #7b898c;
+  font-size: 12px;
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.quote-result {
+  background: #f2f8f7;
+  border: 1px solid #cfe4e0;
+  border-radius: 7px;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.quote-result__total {
+  align-items: baseline;
+  color: #344548;
+  display: flex;
+  gap: 8px;
+}
+
+.quote-result__total strong {
+  color: #087f73;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.quote-result ul {
+  color: #526064;
+  display: grid;
+  font-size: 12px;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.quote-result__note {
+  color: #7b898c;
+  font-size: 12px;
+}
+
 @media (max-width: 960px) {
   .site-header__inner {
     gap: 14px;

@@ -164,3 +164,54 @@ export interface Order {
   updated_at?: string | null;
   [key: string]: unknown;
 }
+
+/**
+ * 试算表单里的一个字段。
+ * 表单长什么样由后端返回的 fields 决定，前端不写死 ——
+ * 将来换成真实产品配置，字段变了也不用改这里。
+ */
+export interface PricingField {
+  key: string;
+  label: string;
+  type: 'number' | 'select' | 'text';
+  required?: boolean;
+  default?: unknown;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  placeholder?: string;
+  options?: Array<{ value: string; label: string }>;
+}
+
+export interface PricingForm {
+  pricing_mode?: string | null;
+  product_id?: number | string | null;
+  product_name?: string | null;
+  currency?: string | null;
+  fields?: PricingField[];
+  note?: string | null;
+}
+
+/** 一次试算结果，字段对齐 Java 侧 PremiumQuoteVO */
+export interface PremiumQuote {
+  id: string;
+  product_id?: number | string | null;
+  product_name?: string | null;
+  category?: string | null;
+  total_premium?: number | string | null;
+  pricing_mode?: string | null;
+  breakdown?: {
+    base_premium?: number | string | null;
+    coverage_factor?: number | string | null;
+    age_factor?: number | string | null;
+    gender_factor?: number | string | null;
+    social_security_factor?: number | string | null;
+    total_premium?: number | string | null;
+    explain?: string[];
+    [key: string]: unknown;
+  } | null;
+  params?: Record<string, unknown> | null;
+  expires_at?: string | null;
+  created_at?: string | null;
+}

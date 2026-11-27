@@ -7,6 +7,8 @@ import type {
   Order,
   PlanInterrupt,
   Policy,
+  PremiumQuote,
+  PricingForm,
   Product,
 } from './types';
 
@@ -162,6 +164,8 @@ export function createOrder(input: {
   planId: string;
   itemIds: string[];
   threadId?: string;
+  /** 试算结果 id：带上它，订单金额就按试算价算，而不是方案项的预算价 */
+  quoteId?: string;
 }): Promise<Order> {
   return authorizedRequest<Order>('/orders', {
     method: 'POST',
@@ -179,6 +183,31 @@ export function payOrder(orderId: string): Promise<Order> {
 /** 我的订单，按下单时间倒序 */
 export function listOrders(): Promise<Order[]> {
   return authorizedRequest<Order[]>('/orders');
+}
+
+/** 试算表单定义：哪些字段、默认值、选项，全由后端给 */
+export function getPricingForm(productId: string): Promise<PricingForm> {
+  return authorizedRequest<PricingForm>(
+    `/products/${encodeURIComponent(productId)}/pricing-form`,
+  );
+}
+
+/**
+ * 试算保费。结果会落库并带 24 小时有效期，
+ * 返回里的 breakdown.explain 是给用户看的算式，一行一条。
+ */
+export function createPremiumQuote(input: {
+  productId: string;
+  age: number;
+  gender: string;
+  coverageAmount: number;
+  socialSecurity?: string;
+  occupationClass?: string;
+}): Promise<PremiumQuote> {
+  return authorizedRequest<PremiumQuote>('/premium-quotes', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
 }
 
 export function listChatThreads(): Promise<ChatThread[]> {

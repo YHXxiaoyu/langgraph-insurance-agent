@@ -2,7 +2,9 @@ package com.insurance.biz.controller;
 
 import com.insurance.biz.common.domain.R;
 import com.insurance.biz.config.OpenApiConfig;
+import com.insurance.biz.domain.vo.PricingFormVO;
 import com.insurance.biz.domain.vo.ProductPageVO;
+import com.insurance.biz.service.IPremiumQuoteService;
 import com.insurance.biz.service.IProductService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -13,6 +15,7 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductController {
 
     private final IProductService productService;
+    private final IPremiumQuoteService quoteService;
 
     @Operation(summary = "在售产品列表", description = "支持按险种筛选与分页")
     @GetMapping
@@ -44,5 +48,12 @@ public class ProductController {
             long pageSize) {
 
         return R.ok(productService.pageOnSale(category, page, pageSize));
+    }
+
+    @Operation(summary = "试算表单定义",
+            description = "返回这个产品试算需要填哪些项、默认值是什么；前端按 fields 渲染即可")
+    @GetMapping("/{id}/pricing-form")
+    public R<PricingFormVO> pricingForm(@Parameter(description = "产品 ID") @PathVariable Long id) {
+        return R.ok(quoteService.pricingForm(id));
     }
 }
