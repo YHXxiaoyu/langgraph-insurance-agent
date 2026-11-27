@@ -15,6 +15,7 @@ from app.core.logging import get_logger
 from app.infra.java_client import JavaServiceError, call_java
 from .schemas import InsuranceAgentState, Intent
 from .chitchat import init_chitchat_agent
+from .claims import init_claims_agent
 from .insurance_advisor import init_insurance_advisor
 
 logger = get_logger(__name__)
@@ -128,19 +129,13 @@ async def confirm_plan_node(state: InsuranceAgentState):
         f"后续可以在「我的保单」里查看进度。")]}
 
 
-# 1.4 理赔咨询节点（暂未做实）
-def claims_node(state: InsuranceAgentState):
-    """理赔咨询节点"""
-    return {"messages": [AIMessage("根据您的需求，我为您处理以下理赔事项：...")]}
-
-
-# 1.5 人工客服节点
+# 1.4 人工客服节点
 def human_handoff_node(state: InsuranceAgentState):
     """人工客服节点"""
     return {"messages": [AIMessage("您好，正在为您转接人工客服...")]}
 
 
-# 1.6 fallback
+# 1.5 fallback
 def fallback_node(state: InsuranceAgentState):
     """fallback节点"""
     return {"messages": [AIMessage("抱歉，我无法处理您的请求。")]}
@@ -156,7 +151,8 @@ async def init_insurance_agent(checkpointer):
     builder.add_node("recommendation_plan", await init_insurance_advisor())
     builder.add_node("prepare_plan", prepare_plan_node)
     builder.add_node("confirm_plan", confirm_plan_node)
-    builder.add_node("claim", claims_node)
+    # 理赔从"固定文案"升级成独立的咨询 Agent：查产品 → 检索条款 → 按条款解释
+    builder.add_node("claim", await init_claims_agent())
     builder.add_node("chitchat", init_chitchat_agent())
     builder.add_node("human_handoff", human_handoff_node)
     builder.add_node("fallback", fallback_node)

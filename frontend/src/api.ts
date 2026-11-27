@@ -2,6 +2,7 @@ import { readSession } from './auth';
 import type {
   ChatHistory,
   ChatThread,
+  Claim,
   InsuranceCategory,
   LoginResult,
   Order,
@@ -183,6 +184,37 @@ export function payOrder(orderId: string): Promise<Order> {
 /** 我的订单，按下单时间倒序 */
 export function listOrders(): Promise<Order[]> {
   return authorizedRequest<Order[]>('/orders');
+}
+
+/**
+ * 取消订单。只有待支付的订单能取消；取消后幂等键会被释放，
+ * 用户可以重新下单（重新试算后价格会更新）。
+ */
+export function cancelOrder(orderId: string): Promise<Order> {
+  return authorizedRequest<Order>(`/orders/${encodeURIComponent(orderId)}/cancel`, {
+    method: 'POST',
+  });
+}
+
+/** 我的理赔记录，按提交时间倒序 */
+export function listClaims(): Promise<Claim[]> {
+  return authorizedRequest<Claim[]>('/claims');
+}
+
+/**
+ * 提交理赔申请。保单必须是本人的、保障中的，
+ * 否则 Java 会直接拒绝（不属于我的保单返回 404）。
+ */
+export function createClaim(input: {
+  policyId: string;
+  claimType: string;
+  amount?: number;
+  description?: string;
+}): Promise<Claim> {
+  return authorizedRequest<Claim>('/claims', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
 }
 
 /** 试算表单定义：哪些字段、默认值、选项，全由后端给 */

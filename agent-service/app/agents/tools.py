@@ -2,7 +2,7 @@ import json
 from decimal import Decimal
 
 from langchain.tools import tool
-
+from app.agents.session import current_user_id
 from app.agents.citations import record as record_citations
 from app.agents.plan import record as record_products
 from app.core.logging import get_logger
@@ -92,3 +92,24 @@ async def retrieve_insurance_clause(
         ],
         ensure_ascii=False,
     )
+
+@tool
+async def query_my_claims():
+    """查询当前用户自己的理赔记录（理赔单号、状态、申请金额、对应保单与产品）。
+
+    用户问"我的理赔到哪一步了""审核通过了吗""赔了多少钱"时使用。
+    只能查当前登录用户自己的记录，不需要也不应该向用户索要身份信息。
+    返回空列表表示该用户还没提交过理赔。
+    """
+    user_id = current_user_id()
+    if not user_id:
+        # 不在对话链路里（比如脚本直接调工具），如实返回而不是瞎查
+        return {"error": "当前会话缺少用户信息，无法查询理赔记录；请让用户到「我的理赔」页面查看"}
+
+    try:
+        data = await call_java("GET", f"/internal/v1/claims?userId={user_id}")
+    except JavaServiceError as exc:
+        logger.error("查询理赔记录失败", reason=str(exc))
+        return {"error": "理赔服务暂时不可用，请稍后再试"}
+
+    return {"claims": data or []}

@@ -1,3 +1,6 @@
+import { PayCircleOutlined } from '@ant-design/icons';
+import { Button } from 'antd';
+
 import { formatCategoryLabel } from './categoryLabels';
 import type { Order, Policy } from './types';
 
@@ -37,7 +40,14 @@ const ORDER_STATUS_CLASS: Record<string, string> = {
   cancelled: 'terminated',
 };
 
-export function PolicyCard({ policy }: { policy: Policy }) {
+export function PolicyCard({
+  policy,
+  onClaim,
+}: {
+  policy: Policy;
+  /** 传了才显示「申请理赔」按钮；只有保障中的保单能申请 */
+  onClaim?: (policy: Policy) => void;
+}) {
   const status = String(policy.status ?? 'active');
   return (
     <article className="policy-card">
@@ -68,11 +78,29 @@ export function PolicyCard({ policy }: { policy: Policy }) {
           <dd>{dateText(policy.effective_at)}</dd>
         </div>
       </dl>
+      {onClaim && status === 'active' ? (
+        <div className="application-actions">
+          <Button size="small" onClick={() => onClaim(policy)}>申请理赔</Button>
+        </div>
+      ) : null}
     </article>
   );
 }
 
-export function OrderCard({ order }: { order: Order }) {
+export function OrderCard({
+  order,
+  onPay,
+  onCancel,
+  busy,
+}: {
+  order: Order;
+  /** 待支付订单可以继续支付 */
+  onPay?: (order: Order) => void;
+  /** 待支付订单可以取消 */
+  onCancel?: (order: Order) => void;
+  /** 有请求在跑时禁用按钮，防止连点 */
+  busy?: boolean;
+}) {
   const status = String(order.status ?? 'pending_payment');
   const items = order.items ?? [];
   return (
@@ -103,6 +131,26 @@ export function OrderCard({ order }: { order: Order }) {
           </div>
         ))}
       </dl>
+      {status === 'pending_payment' && (onPay || onCancel) ? (
+        <div className="application-actions">
+          {onCancel ? (
+            <Button size="small" disabled={busy} onClick={() => onCancel(order)}>
+              取消订单
+            </Button>
+          ) : null}
+          {onPay ? (
+            <Button
+              size="small"
+              type="primary"
+              icon={<PayCircleOutlined />}
+              disabled={busy}
+              onClick={() => onPay(order)}
+            >
+              去支付
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }

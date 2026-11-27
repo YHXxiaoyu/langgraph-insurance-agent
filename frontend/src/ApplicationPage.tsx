@@ -2,12 +2,10 @@ import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
   FileTextOutlined,
-  HeartOutlined,
-  IdcardOutlined,
   PayCircleOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Input, InputNumber, Select, Spin, Steps } from 'antd';
+import { Alert, Button, Checkbox, Input, InputNumber, Select, Spin, Steps } from 'antd';
 import { useEffect, useState } from 'react';
 
 import {
@@ -18,6 +16,7 @@ import {
   getPricingForm,
   payOrder,
 } from './api';
+import { formatCategoryLabel } from './categoryLabels';
 import type { AuthSession, Order, PremiumQuote, PricingField, PricingForm } from './types';
 
 interface ApplicationPageProps {
@@ -27,13 +26,22 @@ interface ApplicationPageProps {
   onOpenPolicies: () => void;
 }
 
+/**
+ * 三步：试算 → 确认 → 完成。
+ * 原来的"客户告知 / 健康告知 / 保单信息"三步是空表单，点了什么都发生不了；
+ * 合并成一步之后，这一步至少有三样真东西：试算出来的价、被保人参数、两项声明。
+ */
 const APPLICATION_STEPS = [
   { title: '保费试算', icon: <PayCircleOutlined /> },
-  { title: '客户告知', icon: <FileTextOutlined /> },
-  { title: '健康告知', icon: <HeartOutlined /> },
-  { title: '保单信息', icon: <IdcardOutlined /> },
-  { title: '确认支付', icon: <CheckCircleOutlined /> },
+  { title: '确认投保', icon: <FileTextOutlined /> },
+  { title: '支付完成', icon: <CheckCircleOutlined /> },
 ];
+
+const GENDER_LABELS: Record<string, string> = {
+  male: '男',
+  female: '女',
+  other: '其他',
+};
 
 export function ApplicationPage({
   session,
@@ -60,6 +68,10 @@ export function ApplicationPage({
   const [quoting, setQuoting] = useState(false);
   const [quote, setQuote] = useState<PremiumQuote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+
+  // 确认页的两项声明：真实投保里它们是必填的，这里也做成"不勾就不能付"
+  const [agreedClause, setAgreedClause] = useState(false);
+  const [agreedHealth, setAgreedHealth] = useState(false);
 
   // 进页面先拿表单定义：字段、默认值、选项都由后端给，前端不写死
   useEffect(() => {
@@ -113,6 +125,9 @@ export function ApplicationPage({
         occupationClass: values.occupation_class ? String(values.occupation_class) : undefined,
       });
       setQuote(result);
+      // 换了价格，之前的勾选要重来
+      setAgreedClause(false);
+      setAgreedHealth(false);
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionExpired();
@@ -125,7 +140,7 @@ export function ApplicationPage({
   }
 
   async function pay() {
-    if (!planId || !itemId || paying || paid) return;
+    if (!planId || !itemId || paying || paid || !quote) return;
     setPaying(true);
     setError(null);
     try {
@@ -133,7 +148,7 @@ export function ApplicationPage({
       const created = await createOrder({
         planId,
         itemIds: [itemId],
-        quoteId: quote?.id,
+        quoteId: quote.id,
       });
       const paidOrder = await payOrder(created.id);
       setOrder(paidOrder);
@@ -151,13 +166,14 @@ export function ApplicationPage({
 
   function setValue(key: string, value: unknown) {
     setValues((current) => ({ ...current, [key]: value }));
-    // 改了参数，之前算出来的价就不作数了
+    // 改了参数，之前算出来的价就不作数了，勾选也要重来
     setQuote(null);
+    setAgreedClause(false);
+    setAgreedHealth(false);
   }
 
-  const isLastStep = currentStep === APPLICATION_STEPS.length - 1;
-  // 第一步必须先试算出来一个价，后面才好"确认支付"
-  const canGoNext = currentStep !== 0 || quote !== null;
+  const canConfirm = agreedClause && agreedHealth && !paying;
+  const stepIndex = paid ? APPLICATION_STEPS.length : currentStep;
 
   return (
     <div className="application-page">
@@ -182,8 +198,10 @@ export function ApplicationPage({
         </section>
 
         <section className="application-flow">
-          <Steps current={paid ? APPLICATION_STEPS.length : currentStep} items={APPLICATION_STEPS} />
+          <Steps current={stepIndex} items={APPLICATION_STEPS} />
+
           {error ? <Alert showIcon type="error" message={error} /> : null}
+
           {paid ? (
             <Alert
               showIcon
@@ -196,41 +214,23 @@ export function ApplicationPage({
               }
               action={<Button size="small" onClick={onOpenPolicies}>我的保单</Button>}
             />
-          ) : (
+          ) : null}
+
+          {/* 第一步：保费试算 */}
+          {!paid && currentStep === 0 ? (
             <div className="application-step-body">
-              <h2>{APPLICATION_STEPS[currentStep].title}</h2>
-
-              {currentStep === 0 ? (
-                <QuoteStep
-                  form={form}
-                  loading={formLoading}
-                  error={formError}
-                  values={values}
-                  quote={quote}
-                  quoteError={quoteError}
-                  quoting={quoting}
-                  onChange={setValue}
-                  onCalculate={() => void calculate()}
-                />
-              ) : null}
-
-              {currentStep === 4 ? (
-                <div className="quote-result">
-                  <div className="quote-result__total">
-                    <span>应付保费</span>
-                    <strong>¥{moneyOf(quote?.total_premium)}</strong>
-                    <span>/ 年</span>
-                  </div>
-                  <span className="quote-result__note">
-                    本次价格来自 {quote?.id ? '已生成的试算记录' : '方案预算'}
-                    {quote?.expires_at ? `，有效期至 ${dateTimeOf(quote.expires_at)}` : ''}。
-                  </span>
-                </div>
-              ) : null}
-
-              {currentStep >= 1 && currentStep <= 3 ? (
-                <p>演示版本暂不填写本步骤内容，点击按钮直接进入下一步。</p>
-              ) : null}
+              <h2>保费试算</h2>
+              <QuoteStep
+                form={form}
+                loading={formLoading}
+                error={formError}
+                values={values}
+                quote={quote}
+                quoteError={quoteError}
+                quoting={quoting}
+                onChange={setValue}
+                onCalculate={() => void calculate()}
+              />
 
               {!planId || !itemId ? (
                 <Alert
@@ -242,31 +242,104 @@ export function ApplicationPage({
               ) : null}
 
               <div className="application-actions">
-                {currentStep > 0 ? (
-                  <Button onClick={() => setCurrentStep((step) => step - 1)}>上一步</Button>
-                ) : null}
-                {isLastStep ? (
-                  <Button
-                    type="primary"
-                    icon={<PayCircleOutlined />}
-                    loading={paying}
-                    disabled={!planId || !itemId || !quote}
-                    onClick={() => void pay()}
-                  >
-                    支付
-                  </Button>
-                ) : (
-                  <Button
-                    type="primary"
-                    disabled={!canGoNext}
-                    onClick={() => setCurrentStep((step) => step + 1)}
-                  >
-                    下一步
-                  </Button>
-                )}
+                <Button
+                  type="primary"
+                  disabled={!quote}
+                  onClick={() => setCurrentStep(1)}
+                >
+                  下一步
+                </Button>
               </div>
             </div>
-          )}
+          ) : null}
+
+          {/* 第二步：确认投保（原来的三步空表单合并到这里） */}
+          {!paid && currentStep === 1 && quote ? (
+            <div className="application-step-body">
+              <h2>确认投保信息</h2>
+              <p>请核对信息并阅读条款。确认后即进入支付，保单在支付成功时生成。</p>
+
+              <div className="quote-result">
+                <div className="quote-result__total">
+                  <span>应付保费</span>
+                  <strong>¥{moneyOf(quote.total_premium)}</strong>
+                  <span>/ 年</span>
+                </div>
+                <dl className="quote-confirm-grid">
+                  <div>
+                    <dt>产品</dt>
+                    <dd>{quote.product_name || form?.product_name || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>险种</dt>
+                    <dd>{formatCategoryLabel(quote.category)}</dd>
+                  </div>
+                  <div>
+                    <dt>被保人</dt>
+                    <dd>
+                      {textOf(paramOf(quote, 'age'))} 岁 · {GENDER_LABELS[textOf(paramOf(quote, 'gender'))] ?? '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>保额</dt>
+                    <dd>¥{moneyOf(paramOf(quote, 'coverage_amount'))}</dd>
+                  </div>
+                  {hasParam(quote, 'social_security') ? (
+                    <div>
+                      <dt>医保</dt>
+                      <dd>{textOf(paramOf(quote, 'social_security')) === 'no' ? '无' : '有'}</dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt>保费有效期</dt>
+                    <dd>{dateTimeOf(quote.expires_at)}</dd>
+                  </div>
+                </dl>
+                <ul>
+                  {(quote.breakdown?.explain ?? []).map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="quote-declarations">
+                <Checkbox
+                  checked={agreedClause}
+                  onChange={(event) => setAgreedClause(event.target.checked)}
+                >
+                  我已阅读并理解保险条款，包括保险责任、免除责任和等待期
+                </Checkbox>
+                <Checkbox
+                  checked={agreedHealth}
+                  onChange={(event) => setAgreedHealth(event.target.checked)}
+                >
+                  被保人身体健康，符合投保条件，所填信息真实有效
+                </Checkbox>
+              </div>
+
+              <div className="application-actions">
+                <Button onClick={() => setCurrentStep(0)}>上一步</Button>
+                <Button
+                  type="primary"
+                  icon={<PayCircleOutlined />}
+                  loading={paying}
+                  disabled={!canConfirm || !planId || !itemId}
+                  onClick={() => void pay()}
+                >
+                  确认并支付
+                </Button>
+              </div>
+
+              {!planId || !itemId ? (
+                <Alert
+                  showIcon
+                  type="warning"
+                  message="缺少方案项信息"
+                  description="当前入口没有携带 plan_id 或 item_id，无法在支付后更新投保状态。请从保险方案产品卡片进入投保流程。"
+                />
+              ) : null}
+            </div>
+          ) : null}
         </section>
       </main>
     </div>
@@ -396,6 +469,21 @@ function FieldInput({
       onChange={(event) => onChange(event.target.value)}
     />
   );
+}
+
+/** 试算入参快照里的某个字段；后端存的是 snake_case */
+function paramOf(quote: PremiumQuote, key: string): unknown {
+  return quote.params?.[key];
+}
+
+function hasParam(quote: PremiumQuote, key: string): boolean {
+  return quote.params ? key in quote.params : false;
+}
+
+/** 参数展示：null/undefined 统一显示成 — */
+function textOf(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  return String(value);
 }
 
 /** 金额展示：后端返回的是数字或数字字符串，统一按千分位显示 */

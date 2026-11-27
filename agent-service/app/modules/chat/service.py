@@ -15,7 +15,7 @@ from app.agents.plan import clear as clear_plan_products
 from app.agents.plan import current_saved
 from app.agents.plan import reset as reset_plan_products
 from app.modules.chat.schema import ChatHistoryResponse, ChatMessageResponse
-
+from app.agents.session import reset as reset_session
 logger = get_logger(__name__)
 
 
@@ -47,12 +47,28 @@ class ChatService:
                 role = "assistant"
             else:
                 continue
-            if message.text:
-                messages.append(ChatMessageResponse(
-                    role=role,
-                    content=message.text,
-                    additional_info=message.additional_kwargs.get("additional_info"),
-                ))
+
+            # 空内容的 AIMessage 是"发起工具调用"本身，不是给用户看的话
+            if not message.text:
+                continue
+
+            info = message.additional_kwargs.get("additional_info")
+
+            # 同一轮里模型会先说一句、再调工具、再说话。实时流把它们拼进同一个气泡，
+            # 历史里却是多条 AIMessage —— 不合并的话，刷新一次 1 个气泡就变成 3 个。
+            if role == "assistant" and messages and messages[-1].role == "assistant":
+                previous = messages[-1]
+                previous.content = f"{previous.content}\n\n{message.text}"
+                if info:
+                    # 引用挂在本轮最后一条上（实时流也是这么写的）
+                    previous.additional_info = info
+                continue
+
+            messages.append(ChatMessageResponse(
+                role=role,
+                content=message.text,
+                additional_info=info,
+            ))
 
         return ChatHistoryResponse(
             thread_id=thread_id,
@@ -80,7 +96,7 @@ class ChatService:
 
         reset_citations()
         reset_plan_products()
-
+        reset_session(user_id)
         # 带 decision = 用户在确认卡片上点了按钮，从断点恢复；否则是新的一轮输入。
         # 新的一轮必须把 user_id 写进 state：确认方案时要用它调 Java 落库
         _input = (

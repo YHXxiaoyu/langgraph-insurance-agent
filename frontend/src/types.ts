@@ -193,6 +193,23 @@ export interface PricingForm {
   note?: string | null;
 }
 
+/** 理赔申请，字段对齐 Java 侧 ClaimVO */
+export interface Claim {
+  id: string;
+  claim_number?: string | null;
+  policy_id?: string | null;
+  policy_number?: string | null;
+  product_id?: number | string | null;
+  product_name?: string | null;
+  claim_type?: string | null;
+  amount?: number | string | null;
+  description?: string | null;
+  status?: string | null;
+  submitted_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+}
+
 /** 一次试算结果，字段对齐 Java 侧 PremiumQuoteVO */
 export interface PremiumQuote {
   id: string;

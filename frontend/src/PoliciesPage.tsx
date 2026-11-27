@@ -11,6 +11,8 @@ interface PoliciesPageProps {
   onBack: () => void;
   onSessionExpired: () => void;
   onOpenOrders: () => void;
+  /** 保单卡片「申请理赔」：带着这张保单跳到理赔页 */
+  onOpenClaim: (policyId: string) => void;
 }
 
 /**
@@ -18,7 +20,13 @@ interface PoliciesPageProps {
  * 保单本身在支付成功那一刻由 Java 自动发出，这个页面只负责展示。
  * 购买记录在「我的订单」里，两个概念分开，入口也分开。
  */
-export function PoliciesPage({ session, onBack, onSessionExpired, onOpenOrders }: PoliciesPageProps) {
+export function PoliciesPage({
+  session,
+  onBack,
+  onSessionExpired,
+  onOpenOrders,
+  onOpenClaim,
+}: PoliciesPageProps) {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +97,11 @@ export function PoliciesPage({ session, onBack, onSessionExpired, onOpenOrders }
 
         <div className="policy-card-grid">
           {policies.map((policy) => (
-            <PolicyCard policy={policy} key={policy.id} />
+            <PolicyCard
+              policy={policy}
+              key={policy.id}
+              onClaim={(target) => onOpenClaim(target.id)}
+            />
           ))}
         </div>
       </main>

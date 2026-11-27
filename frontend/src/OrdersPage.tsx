@@ -2,7 +2,7 @@ import { ArrowLeftOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { Alert, Button, Empty, Skeleton } from 'antd';
 import { useEffect, useState } from 'react';
 
-import { ApiError, errorText, listOrders } from './api';
+import { ApiError, cancelOrder, errorText, listOrders, payOrder } from './api';
 import { OrderCard } from './insuranceCards';
 import type { AuthSession, Order } from './types';
 
@@ -50,6 +50,46 @@ export function OrdersPage({ session, onBack, onSessionExpired, onOpenPolicies }
   // 待支付单独计数，摆在标题里提醒用户还有没付完的单
   const unpaid = orders.filter((order) => order.status === 'pending_payment').length;
 
+  // 正在处理的订单 id：用来禁用按钮，防止连点
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function handlePay(order: Order) {
+    if (busyId) return;
+    setBusyId(order.id);
+    setActionError(null);
+    try {
+      await payOrder(order.id);
+      setReloadKey((value) => value + 1);
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 401) {
+        onSessionExpired();
+        return;
+      }
+      setActionError(errorText(reason, '支付失败，请稍后重试'));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleCancel(order: Order) {
+    if (busyId) return;
+    setBusyId(order.id);
+    setActionError(null);
+    try {
+      await cancelOrder(order.id);
+      setReloadKey((value) => value + 1);
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 401) {
+        onSessionExpired();
+        return;
+      }
+      setActionError(errorText(reason, '取消失败，请稍后重试'));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="application-page">
       <header className="advisor-header">
@@ -87,6 +127,10 @@ export function OrdersPage({ session, onBack, onSessionExpired, onOpenPolicies }
           />
         ) : null}
 
+        {actionError ? (
+          <Alert showIcon type="error" message={actionError} style={{ marginBottom: 12 }} />
+        ) : null}
+
         {loading ? <Skeleton active paragraph={{ rows: 4 }} /> : null}
 
         {!loading && !error && orders.length === 0 ? (
@@ -95,7 +139,13 @@ export function OrdersPage({ session, onBack, onSessionExpired, onOpenPolicies }
 
         <div className="policy-card-grid">
           {orders.map((order) => (
-            <OrderCard order={order} key={order.id} />
+            <OrderCard
+              order={order}
+              key={order.id}
+              busy={busyId === order.id}
+              onPay={(target) => void handlePay(target)}
+              onCancel={(target) => void handleCancel(target)}
+            />
           ))}
         </div>
       </main>

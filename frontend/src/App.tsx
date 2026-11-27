@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { AdvisorPage } from './AdvisorPage';
 import { ApplicationPage } from './ApplicationPage';
+import { ClaimsPage } from './ClaimsPage';
 import { clearSession, readSession, saveSession } from './auth';
 import { HomePage } from './HomePage';
 import { OrdersPage } from './OrdersPage';
@@ -40,7 +41,13 @@ export default function App() {
   function logout() {
     clearSession();
     setSession(null);
-    if (path === '/advisor' || path === '/apply' || path === '/policies' || path === '/orders') {
+    if (
+      path === '/advisor'
+      || path === '/apply'
+      || path === '/policies'
+      || path === '/orders'
+      || path === '/claims'
+    ) {
       navigate('/');
     }
   }
@@ -59,6 +66,8 @@ export default function App() {
         onSessionExpired={sessionExpired}
         onApplyProduct={(target) => navigate(applyPath(target))}
         onOpenPolicies={() => navigate('/policies')}
+        // 从产品详情带过来的开场问题，顾问页会自动用它开一个新会话
+        initialAsk={new URLSearchParams(window.location.search).get('ask')}
       />
     );
   }
@@ -81,6 +90,18 @@ export default function App() {
         onBack={() => navigate('/')}
         onSessionExpired={sessionExpired}
         onOpenOrders={() => navigate('/orders')}
+        onOpenClaim={(policyId) => navigate(`/claims?policy_id=${encodeURIComponent(policyId)}`)}
+      />
+    );
+  }
+
+  if (path === '/claims' && session) {
+    return (
+      <ClaimsPage
+        session={session}
+        onBack={() => navigate('/')}
+        onSessionExpired={sessionExpired}
+        onOpenPolicies={() => navigate('/policies')}
       />
     );
   }
@@ -100,13 +121,19 @@ export default function App() {
     <HomePage
       session={session}
       initialAuthOpen={
-        path === '/advisor' || path === '/apply' || path === '/policies' || path === '/orders'
+        path === '/advisor'
+        || path === '/apply'
+        || path === '/policies'
+        || path === '/orders'
+        || path === '/claims'
       }
       onAuthenticated={authenticated}
       onLogout={logout}
       onConsult={() => navigate('/advisor')}
+      onConsultProduct={(prompt) => navigate(`/advisor?ask=${encodeURIComponent(prompt)}`)}
       onOpenPolicies={() => navigate('/policies')}
       onOpenOrders={() => navigate('/orders')}
+      onOpenClaims={() => navigate('/claims')}
     />
   );
 }

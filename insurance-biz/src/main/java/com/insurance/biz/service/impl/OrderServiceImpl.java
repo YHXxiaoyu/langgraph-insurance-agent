@@ -42,6 +42,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
     private static final String STATUS_PAID = "paid";
     private static final String STATUS_PENDING_POLICY = "pending_policy";
     private static final String STATUS_COMPLETED = "completed";
+    private static final String STATUS_CANCELLED = "cancelled";
 
     /** insurance_plan_items.status 里"已投保"的值，和方案域保持一致 */
     private static final String ITEM_INSURED = "insured";
@@ -162,19 +163,55 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
             throw new BadRequestException("订单当前状态为 " + status + "，不能支付");
         }
 
+        // 3.报价过期就不能付：价格可能已经变了。
+        //   待支付订单可能放几天，试算的 24 小时有效期早就过了
+        if (order.getQuoteIds() != null && !order.getQuoteIds().isEmpty()) {
+            PremiumQuoteVO quote = quoteService.getMine(order.getQuoteIds().get(0));
+            if (quote.expiresAt() == null || quote.expiresAt().isBefore(LocalDateTime.now())) {
+                throw new BadRequestException("试算报价已过期，请重新下单");
+            }
+        }
+
         // TODO(支付): 这里直接认为"钱到账了"。接入真实支付渠道后，
         //  应该校验支付回调签名 / 查询支付流水，成功才继续往下走。
-        // 3.逐项标记已投保 + 发保单。markItemInsured 自己带事务，
+        // 4.逐项标记已投保 + 发保单。markItemInsured 自己带事务，
         //   这里会加入外层事务，任何一项失败整单回滚
         for (OrderItem item : order.getItems()) {
             planService.markItemInsured(item.getPlanId(), item.getPlanItemId());
         }
 
-        // 4.把订单推进到已支付。只带 id + status，让 ON UPDATE 生效
+        // 5.把订单推进到已支付。只带 id + status，让 ON UPDATE 生效
         Order update = new Order();
         update.setId(orderId);
         update.setStatus(STATUS_PAID);
         updateById(update);
+
+        return toVO(getById(orderId));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OrderVO cancel(String orderId) {
+        Order order = requireOwned(orderId);
+        String status = order.getStatus();
+
+        // 已经取消过就直接返回：和支付一样，重复操作不产生副作用
+        if (STATUS_CANCELLED.equals(status)) {
+            return toVO(order);
+        }
+        if (!STATUS_PENDING_PAYMENT.equals(status)) {
+            throw new BadRequestException("订单当前状态为 " + status + "，不能取消");
+        }
+
+        // 幂等键显式置空：MySQL 唯一索引允许多个 NULL，这样一来
+        // 用户取消后重新下单（同一方案 + 同一份试算）不会被这张废单挡住。
+        // 注意不能用 updateById：MyBatis-Plus 默认忽略 null 字段，写不进去
+        lambdaUpdate()
+                .eq(Order::getId, orderId)
+                .eq(Order::getStatus, STATUS_PENDING_PAYMENT)
+                .set(Order::getStatus, STATUS_CANCELLED)
+                .set(Order::getIdempotencyKey, null)
+                .update();
 
         return toVO(getById(orderId));
     }

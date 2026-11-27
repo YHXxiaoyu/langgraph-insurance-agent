@@ -39,6 +39,11 @@ interface AdvisorPageProps {
   onSessionExpired: () => void;
   onApplyProduct: (target: ApplyProductTarget) => void;
   onOpenPolicies: () => void;
+  /**
+   * 从产品详情页带过来的开场问题。
+   * 有值时：新开一个会话，把这句直接发给顾问，然后把 URL 参数清掉（刷新不会重发）。
+   */
+  initialAsk?: string | null;
 }
 
 interface ApplyProductTarget {
@@ -53,6 +58,7 @@ export function AdvisorPage({
   onSessionExpired,
   onApplyProduct,
   onOpenPolicies,
+  initialAsk = null,
 }: AdvisorPageProps) {
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -201,6 +207,32 @@ export function AdvisorPage({
     };
   }, [loadMessages, onSessionExpired]);
 
+  // 从产品详情点「咨询顾问」过来：新开一个会话，把开场问题直接发出去。
+  // 用 ref 记住已经消费过的这句话，避免重新渲染时重复发送。
+  const askedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialAsk || loadingThreads || askedRef.current === initialAsk) return;
+    askedRef.current = initialAsk;
+    // 参数只消费一次：先把 URL 里的 ask 清掉，刷新页面不会又发一遍
+    window.history.replaceState({}, '', '/advisor');
+    void (async () => {
+      try {
+        const thread = await createChatThread();
+        setThreads((current) => [thread, ...current]);
+        setActiveThreadId(thread.id);
+        setMessages([]);
+        setPendingInterrupt(null);
+        await sendContent(initialAsk, thread.id);
+      } catch (reason) {
+        if (isUnauthorized(reason)) {
+          onSessionExpired();
+          return;
+        }
+        setError(errorText(reason, '咨询会话创建失败'));
+      }
+    })();
+  }, [initialAsk, loadingThreads]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, sending]);
@@ -236,11 +268,22 @@ export function AdvisorPage({
     // 有未处理的确认卡片时不允许发新消息（输入框已禁用，这里再兜一层）
     if (!content || sending || pendingInterrupt) return;
     setInput('');
+    await sendContent(content);
+  }
+
+  /**
+   * 真正发消息的地方：输入框、方案确认按钮、产品详情带过来的开场问题都走这里。
+   * <p>
+   * threadId 允许显式传入，是因为开场问题发生在一个刚建好的新会话里，
+   * 那一刻 activeThreadId 这个 state 还没生效（setState 是异步的）。
+   */
+  async function sendContent(content: string, threadIdOverride?: string) {
+    if (sending) return;
     setSending(true);
     setError(null);
     setPendingInterrupt(null);
     try {
-      const threadId = activeThreadId ?? (await createThread()).id;
+      const threadId = threadIdOverride ?? activeThreadId ?? (await createThread()).id;
       setMessages((current) => [
         ...current,
         { role: 'user', content },

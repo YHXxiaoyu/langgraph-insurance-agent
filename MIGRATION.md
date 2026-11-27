@@ -549,6 +549,24 @@ Java 删 `chat_threads` 记录后，Python 侧要清掉对应 thread 的 checkpo
     支付后出单、方案转 applying
   - 没做（已记录）：真实费率表解析、核保、保司接口对接、表单真实配置
 
+- [x] **理赔域（Java 受理 + Python 咨询，2026-11-27）**
+  - Java：`Claim` 的 PO / Mapper / DTO / VO、`IClaimService`、`ClaimController`（报案 / 列表 / 详情）
+  - 规则：理赔必须挂在本人且保障中的保单上（不属于我 404、非 active 400、过期 400）；
+    状态固定 `submitted`（审核赔付由保司完成，不造假状态机）；`amount` 在 submitted
+    阶段是申请金额，赔付后才是核定金额；单号 `CL + 日期 + 主键前 6 位`
+  - 内部接口 `GET /internal/v1/claims?userId=`：给 AI 查用户自己的理赔进度
+  - Python：`app/agents/claims.py` 理赔咨询 Agent（查产品 + 检索条款 + 查我的理赔）；
+    新增 `app/agents/session.py` 用 ContextVar 把 user_id 传给子图里的工具
+    （工具不收 user_id 参数，防止提示注入越权）
+  - 前端：保单卡「申请理赔」（仅 active 显示）、「我的理赔」页（报案表单 + 按险种的材料清单 + 记录列表）
+
+- [x] **体验修复四连（2026-11-27）**
+  - 投保页 5 步压成 3 步：试算 → 确认（被保人参数 / 保费明细 / 两项必勾声明）→ 支付完成；
+    改参数会重置勾选，未试算不能进下一步
+  - 多气泡：`chat_history` 把连续 assistant 消息合并成一条（修复后同一会话 4 条 → 2 条，10 条引用保留）
+  - 产品详情「咨询顾问」带上下文：`/advisor?ask=…` → 新建会话自动发问 → 清 URL 参数防重发
+  - 订单：支持取消（幂等键置 NULL 以便重新下单）与继续支付（校验试算报价是否过期）
+
 ### 🎯 核心（保留，约 4 人天）
 
 - [x] **Python pytest 基础**（2026-11-24 完成）

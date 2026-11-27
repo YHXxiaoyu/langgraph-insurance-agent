@@ -31,8 +31,18 @@ interface HomePageProps {
   onAuthenticated: (session: AuthSession) => void;
   onLogout: () => void;
   onConsult: () => void;
+  /** 从产品详情点「咨询顾问」：带上这款产品的开场问题跳到顾问页 */
+  onConsultProduct: (prompt: string) => void;
   onOpenPolicies: () => void;
   onOpenOrders: () => void;
+  onOpenClaims: () => void;
+}
+
+/** 从产品详情跳到顾问时，替用户写好的第一句话 */
+function buildConsultPrompt(product: Product): string {
+  const category = CATEGORY_LABELS[product.category] ?? '保险';
+  return `我想咨询「${product.name}」这款产品（${category}，${product.insurer}），`
+    + '想了解它具体保什么、适合什么人、投保有什么注意事项。';
 }
 
 export function HomePage({
@@ -41,8 +51,10 @@ export function HomePage({
   onAuthenticated,
   onLogout,
   onConsult,
+  onConsultProduct,
   onOpenPolicies,
   onOpenOrders,
+  onOpenClaims,
 }: HomePageProps) {
   const [category, setCategory] = useState<CategoryFilter>('all');
   const [products, setProducts] = useState<Product[]>([]);
@@ -51,6 +63,8 @@ export function HomePage({
   const [authOpen, setAuthOpen] = useState(initialAuthOpen);
   const [consultAfterLogin, setConsultAfterLogin] = useState(initialAuthOpen);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  // 未登录时点了产品详情的「咨询顾问」：把这句开场白存住，登录完接着用
+  const [pendingAsk, setPendingAsk] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -91,9 +105,31 @@ export function HomePage({
     openAuth(true);
   }
 
+  /**
+   * 产品详情里的「咨询顾问」。
+   * 和顶部的「让顾问帮我选」不同：那个是空手进顾问页，这个要带上产品，
+   * 所以先把开场问题备好，未登录的话等登录完再带着它跳过去。
+   */
+  function consultProduct(product: Product) {
+    const prompt = buildConsultPrompt(product);
+    setSelectedProduct(null);
+    if (session) {
+      onConsultProduct(prompt);
+      return;
+    }
+    setPendingAsk(prompt);
+    setAuthOpen(true);
+  }
+
   function authenticated(nextSession: AuthSession) {
     onAuthenticated(nextSession);
     setAuthOpen(false);
+    if (pendingAsk) {
+      const prompt = pendingAsk;
+      setPendingAsk(null);
+      onConsultProduct(prompt);
+      return;
+    }
     if (consultAfterLogin) onConsult();
     setConsultAfterLogin(false);
   }
@@ -131,6 +167,15 @@ export function HomePage({
               }}
             >
               我的订单
+            </a>
+            <a
+              href="/claims"
+              onClick={(event) => {
+                event.preventDefault();
+                onOpenClaims();
+              }}
+            >
+              我的理赔
             </a>
           </nav>
           <div className="site-actions">
@@ -244,7 +289,13 @@ export function HomePage({
         title={selectedProduct?.name}
         footer={[
           <Button key="close" onClick={() => setSelectedProduct(null)}>关闭</Button>,
-          <Button key="consult" type="primary" onClick={consult}>咨询顾问</Button>,
+          <Button
+            key="consult"
+            type="primary"
+            onClick={() => { if (selectedProduct) consultProduct(selectedProduct); }}
+          >
+            咨询顾问
+          </Button>,
         ]}
         onCancel={() => setSelectedProduct(null)}
         width={620}
