@@ -3,6 +3,7 @@ import type {
   ChatHistory,
   ChatThread,
   Claim,
+  ClaimMaterials,
   InsuranceCategory,
   LoginResult,
   Order,
@@ -199,6 +200,16 @@ export function cancelOrder(orderId: string): Promise<Order> {
 /** 我的理赔记录，按提交时间倒序 */
 export function listClaims(): Promise<Claim[]> {
   return authorizedRequest<Claim[]>('/claims');
+}
+
+/**
+ * 按保单生成理赔材料清单（依据条款，由 Agent 生成并缓存）。
+ * 第一次调用要检索 + 调模型，可能需要几秒。
+ */
+export function getClaimMaterials(policyId: string): Promise<ClaimMaterials> {
+  return authorizedRequest<ClaimMaterials>(
+    `/policies/${encodeURIComponent(policyId)}/claim-materials`,
+  );
 }
 
 /**

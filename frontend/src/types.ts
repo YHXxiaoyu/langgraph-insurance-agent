@@ -210,6 +210,15 @@ export interface Claim {
   [key: string]: unknown;
 }
 
+/** 理赔材料清单，字段对齐 Java 侧 ClaimMaterialsVO */
+export interface ClaimMaterials {
+  product_id?: number | string | null;
+  items?: string[];
+  note?: string | null;
+  /** true = 由条款生成；false = 生成失败，前端用兜底清单 */
+  generated?: boolean;
+}
+
 /** 一次试算结果，字段对齐 Java 侧 PremiumQuoteVO */
 export interface PremiumQuote {
   id: string;

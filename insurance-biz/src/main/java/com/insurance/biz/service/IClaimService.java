@@ -3,6 +3,7 @@ package com.insurance.biz.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.insurance.biz.domain.dto.CreateClaimDTO;
 import com.insurance.biz.domain.po.Claim;
+import com.insurance.biz.domain.vo.ClaimMaterialsVO;
 import com.insurance.biz.domain.vo.ClaimVO;
 
 import java.util.List;
@@ -21,4 +22,7 @@ public interface IClaimService extends IService<Claim> {
 
     /** 当前用户的理赔详情，不存在或不属于自己都抛 404 */
     ClaimVO getMine(String claimId);
+
+    /** 按保单生成理赔材料清单；Agent 不可用时回落成按险种的通用清单 */
+    ClaimMaterialsVO claimMaterials(String policyId);
 }

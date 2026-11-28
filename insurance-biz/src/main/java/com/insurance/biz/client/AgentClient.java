@@ -6,6 +6,7 @@ import com.insurance.biz.config.AgentProperties;
 import com.insurance.biz.config.InternalProperties;
 import com.insurance.biz.config.TraceIdFilter;
 import com.insurance.biz.domain.vo.ChatHistoryVO;
+import com.insurance.biz.domain.vo.ClaimMaterialsVO;
 import com.insurance.biz.security.InternalTokenFilter;
 import io.netty.channel.ChannelOption;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,10 @@ public class AgentClient {
     /** 同步调用的等待上限。读 checkpoint 很快，10 秒没回就是出问题了，
      *  不能沿用流式那个 120 秒的响应超时，否则会把 Tomcat 线程占死 */
     private static final Duration SYNC_TIMEOUT = Duration.ofSeconds(10);
+
+    /** 生成材料清单要「检索 + 调模型」，第一次必然慢；
+     *  单独给它一个更宽的上限，且 Python 侧有缓存，后续调用是毫秒级 */
+    private static final Duration MATERIALS_TIMEOUT = Duration.ofSeconds(45);
 
     private final WebClient webClient;
     private final String internalToken;
@@ -107,6 +112,31 @@ public class AgentClient {
         } catch (Exception ex) {
             log.error("读取 Agent 历史失败, threadId={}", threadId, ex);
             throw new CommonException("Agent 服务暂时不可用，请稍后再试", 503);
+        }
+    }
+
+    /**
+     * 按产品生成理赔材料清单。
+     * <p>
+     * 和 chatHistory 不同：失败**不抛异常**，返回 null 让调用方回落到
+     * 按险种的通用清单 —— 材料提示属于辅助信息，不值得因为它让报案页打不开。
+     */
+    public ClaimMaterialsVO claimMaterials(Long productId) {
+        try {
+            return webClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/internal/v1/agent/claim-materials")
+                            .queryParam("product_id", productId)
+                            .build())
+                    .header(InternalTokenFilter.HEADER, internalToken)
+                    .header(TraceIdFilter.HEADER, traceId())
+                    .accept(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .bodyToMono(ClaimMaterialsVO.class)
+                    .block(MATERIALS_TIMEOUT);
+        } catch (Exception ex) {
+            log.warn("生成理赔材料清单失败, productId={}", productId, ex);
+            return null;
         }
     }
 

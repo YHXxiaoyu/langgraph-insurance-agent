@@ -2,12 +2,14 @@ package com.insurance.biz.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.insurance.biz.client.AgentClient;
 import com.insurance.biz.common.exception.BadRequestException;
 import com.insurance.biz.common.exception.NotFoundException;
 import com.insurance.biz.domain.dto.CreateClaimDTO;
 import com.insurance.biz.domain.po.Claim;
 import com.insurance.biz.domain.po.Policy;
 import com.insurance.biz.domain.po.Product;
+import com.insurance.biz.domain.vo.ClaimMaterialsVO;
 import com.insurance.biz.domain.vo.ClaimVO;
 import com.insurance.biz.mapper.ClaimMapper;
 import com.insurance.biz.mapper.PolicyMapper;
@@ -41,8 +43,19 @@ public class ClaimServiceImpl extends ServiceImpl<ClaimMapper, Claim> implements
 
     private static final DateTimeFormatter NUMBER_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
+    /**
+     * Agent 不可用时的兜底清单，按险种给。
+     * 和前端写死的那份保持一致 —— 宁可给通用的，也不要让用户看到空白。
+     */
+    private static final Map<String, List<String>> FALLBACK_MATERIALS = Map.of(
+            "medical", List.of("住院病历、出院小结", "医疗费用发票原件", "费用明细清单", "身份证件、本人银行卡"),
+            "critical_illness", List.of("二级以上医院诊断证明", "病理报告或影像检查报告", "住院病历", "身份证件、本人银行卡"),
+            "accident", List.of("事故证明（如交通事故认定书）", "门急诊病历与检查报告", "医疗费用票据", "身份证件、本人银行卡"),
+            "life", List.of("死亡证明或户籍注销证明", "受益人与被保险人关系证明", "身份证件、本人银行卡"));
+
     private final PolicyMapper policyMapper;
     private final ProductMapper productMapper;
+    private final AgentClient agentClient;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -121,6 +134,35 @@ public class ClaimServiceImpl extends ServiceImpl<ClaimMapper, Claim> implements
                 ? null
                 : productMapper.selectById(claim.getProductId());
         return ClaimVO.from(claim, policy, product);
+    }
+
+    @Override
+    public ClaimMaterialsVO claimMaterials(String policyId) {
+        // 1.保单必须是自己的，别人的保单在这里就是"查不到"
+        Policy policy = policyMapper.selectOne(
+                Wrappers.<Policy>lambdaQuery()
+                        .eq(Policy::getId, policyId)
+                        .eq(Policy::getUserId, UserContext.getUserId()));
+        if (policy == null) {
+            throw new NotFoundException("保单不存在");
+        }
+
+        // 2.交给 Agent 按条款生成（Python 侧有 6 小时缓存）
+        ClaimMaterialsVO generated = agentClient.claimMaterials(policy.getProductId());
+        if (generated != null && generated.items() != null && !generated.items().isEmpty()) {
+            return generated;
+        }
+
+        // 3.生成失败就回落到按险种的通用清单：材料提示是辅助信息，
+        //   不能因为模型不可用就让报案页打不开
+        Product product = productMapper.selectById(policy.getProductId());
+        String category = product == null ? null : product.getCategory();
+        List<String> fallback = FALLBACK_MATERIALS.getOrDefault(category, List.of());
+        return new ClaimMaterialsVO(
+                policy.getProductId(),
+                fallback,
+                "按险种整理的通用清单（条款生成暂不可用）",
+                false);
     }
 
     /** 批量转 VO：一次查完全部保单、一次查完全部产品，避免每条理赔查两次库 */

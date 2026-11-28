@@ -42,6 +42,17 @@ async def internal_chat(request: InternalChatRequest, http_request: Request):
         yield sse
 
 
+@router.get("/claim-materials", dependencies=[Depends(verify_internal_token)])
+async def claim_materials(product_id: int):
+    """按产品条款生成理赔材料清单。
+
+    同步接口（不是 SSE）：Java 收到后转给浏览器，页面等几秒拿结果。
+    第一次调用要检索 + 调模型，之后走进程内缓存。
+    """
+    from app.agents.claim_materials import generate_claim_materials
+    return await generate_claim_materials(product_id)
+
+
 @router.get("/threads/{thread_id}/messages", response_model=ChatHistoryResponse,
             dependencies=[Depends(verify_internal_token)])
 async def chat_history(thread_id: UUID, http_request: Request):

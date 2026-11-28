@@ -43,7 +43,7 @@ public class OrderController {
     public R<OrderVO> pay(@Parameter(description = "订单 ID") @PathVariable String id) {
         return R.ok(orderService.pay(id));
     }
-    
+
     @Operation(summary = "取消订单", description = "只有待支付的订单能取消；取消后释放幂等键，可以重新下单")
     @PostMapping("/{id}/cancel")
     public R<OrderVO> cancel(@Parameter(description = "订单 ID") @PathVariable String id) {
